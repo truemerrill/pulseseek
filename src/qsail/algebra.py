@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from math import factorial
-from typing import Callable, overload
+from typing import Any, Callable, Mapping, Generator, Iterable, overload
 
 import numpy as np
 
@@ -36,11 +36,84 @@ def basis_vector(b: LieBasis, index: int) -> Vector: ...
 
 
 def basis_vector(b: int | LieBasis, index: int) -> Vector:
+    """Construct a Lie basis vector
+
+    Args:
+        b (int | LieBasis): the basis or the rank of the algebra
+        index (int): the basis vector index
+
+    Returns:
+        Vector: the basis vector
+    """
     dim = b.ndim if isinstance(b, LieBasis) else b
     e = np.zeros((dim,), dtype=float)
     e[index] = 1.0
     assert is_vector(e)
     return e
+
+
+NameElement = Callable[[int], str]
+
+
+def lie_closure(
+    elements: Mapping[str, Any],
+    bracket: Bracket = matrix_commutator,
+    name_element: NameElement = lambda idx: f"_A{idx}",
+    max_rank: int = 100
+) -> LieBasis:
+
+    def in_span(x: AntiHermitian, vectors: Iterable[AntiHermitian], atol=1e-12) -> bool:
+        vecs = tuple(vectors)
+        if len(vecs) == 0:
+            return False
+
+        V = np.column_stack([M.reshape(-1) for M in vecs])
+        X = x.reshape(-1)
+
+        rank_V = np.linalg.matrix_rank(V, tol=atol)
+        rank_aug = np.linalg.matrix_rank(np.column_stack([V, X]), tol=atol)
+        return rank_V == rank_aug
+    
+    def brackets(vectors: Iterable[AntiHermitian]) -> Generator[AntiHermitian, None, None]:
+        for a, x in enumerate(vectors):
+            for b, y in enumerate(vectors):
+                if a != b:
+                    yield bracket(x, y)
+    
+    def new_elements(vectors: Iterable[AntiHermitian], max_rank: int) -> dict[str, AntiHermitian]:
+        v = list(vectors)
+        elements: dict[str, AntiHermitian] = {}
+        idx = 0
+        
+        for E in brackets(v):
+            if not in_span(E, v):
+                v.append(E)
+                name = name_element(idx)
+                idx += 1
+                elements[name] = E
+
+            if len(v) > max_rank:
+                raise ValueError("Maximum rank exceeded, Lie algebra may be infinite rank")
+        return elements
+                
+    def linearly_independent_elements(elements: Mapping[str, AntiHermitian]) -> dict[str, AntiHermitian]:
+        independent: dict[str, AntiHermitian] = {}
+        for name, E in elements.items():
+            if not in_span(E, independent.values()):
+                independent[name] = E
+        return independent
+
+    U = linearly_independent_elements(elements)
+    V = new_elements(U.values(), max_rank)
+    closure = {**U, **V}
+
+    while True:
+        V = new_elements(closure.values(), max_rank)
+        if len(V) == 0:
+            break
+        closure = {**closure, **V}
+    
+    return LieBasis.new(closure)
 
 
 def gram_matrix(

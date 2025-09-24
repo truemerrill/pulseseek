@@ -3,7 +3,7 @@ from scipy.linalg import expm
 
 from qsail.types import is_vector, is_anti_hermitian, is_hermitian
 from qsail.basis import special_unitary_basis
-from qsail.algebra import LieAlgebra, basis_vector, hilbert_schmidt_inner_product, matrix_commutator
+from qsail.algebra import LieAlgebra, basis_vector, hilbert_schmidt_inner_product, matrix_commutator, lie_closure
 
 
 def test_algebra_inner_product():
@@ -116,3 +116,24 @@ def test_algebra_adjoint_action():
         assert is_anti_hermitian(C)
 
         assert np.isclose(1j * C, Ht, atol=1e-12).all()
+
+
+def test_lie_closure():
+    # Generate su2
+    X = 1j * np.array([[0, 1], [1, 0]])
+    Y = 1j * np.array([[0, -1j], [1j, 0]])
+
+    closure_basis = lie_closure({"X": X, "Y": Y})
+    assert closure_basis.dim == 3
+    
+    # Generate su4
+    X = 1j * np.diag([-3/2, -1/2, 0, 2])
+    Y = 1j * np.array([[0, 1, 0, 0],
+                       [1, 0, 1 + 1j, 0],
+                       [0, 1 - 1j, 0, 1],
+                       [0, 0, 1, 0]])
+    
+    closure_basis = lie_closure({"X": X, "Y": Y})
+    assert closure_basis.dim == 15
+    for x in closure_basis.elements:
+        assert np.trace(x) == 0
