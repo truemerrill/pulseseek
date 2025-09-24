@@ -1,4 +1,4 @@
-from typing import Any, Protocol, Self, TypeGuard, runtime_checkable
+from typing import Any, Protocol, Self, TypeGuard, Iterator, runtime_checkable
 import numpy as np
 import numpy.typing as npt
 
@@ -48,6 +48,7 @@ class Vector(
     
     def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
     def __getitem__(self, key: Any) -> Any: ...
+    def __iter__(self) -> Iterator[Any]: ...
 
 
 def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[Vector]:
