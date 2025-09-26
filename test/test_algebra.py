@@ -2,8 +2,8 @@ import numpy as np
 from scipy.linalg import expm
 
 from qsail.types import is_vector, is_anti_hermitian, is_hermitian
-from qsail.basis import special_unitary_basis
-from qsail.algebra import LieAlgebra, basis_vector, hilbert_schmidt_inner_product, matrix_commutator, lie_closure
+from qsail.basis import special_unitary_basis, basis_vector
+from qsail.algebra import LieAlgebra, hilbert_schmidt_inner_product, matrix_commutator, lie_closure
 
 
 def test_algebra_inner_product():

@@ -29,29 +29,6 @@ def matrix_commutator(X: SquareMatrix, Y: SquareMatrix) -> SquareMatrix:
     return X @ Y - Y @ X
 
 
-@overload
-def basis_vector(b: int, index: int) -> Vector: ...
-@overload
-def basis_vector(b: LieBasis, index: int) -> Vector: ...
-
-
-def basis_vector(b: int | LieBasis, index: int) -> Vector:
-    """Construct a Lie basis vector
-
-    Args:
-        b (int | LieBasis): the basis or the rank of the algebra
-        index (int): the basis vector index
-
-    Returns:
-        Vector: the basis vector
-    """
-    dim = b.ndim if isinstance(b, LieBasis) else b
-    e = np.zeros((dim,), dtype=float)
-    e[index] = 1.0
-    assert is_vector(e)
-    return e
-
-
 NameElement = Callable[[int], str]
 
 
@@ -61,8 +38,30 @@ def lie_closure(
     name_element: NameElement = lambda idx: f"_A{idx}",
     max_rank: int = 100
 ) -> LieBasis:
+    """Construct a basis closed under the Lie bracket that spans the elements.
+
+    Args:
+        elements (Mapping[str, Any]): the elements to span.  The keys should be
+            the names of the elements and the values should be the elements
+            themselves.  The elements must be anti-Hermitian.
+        bracket (Bracket, optional): the Lie bracket. Defaults to 
+            matrix_commutator.
+        name_element (NameElement, optional): A callback function that is used
+            to generate names of created algebra elements. Defaults to 
+            `lambda idx: f"_A{idx}"`.
+        max_rank (int, optional): the maximum rank of the generated Lie
+            algebra.  If the rank exceeds max_rank, the function raises a
+            ValueError.  Defaults to 100.
+
+    Raises:
+        ValueError: if the rank of the generated algebra exceeds max_rank
+
+    Returns:
+        LieBasis: the spanning basis
+    """
 
     def in_span(x: AntiHermitian, vectors: Iterable[AntiHermitian], atol=1e-12) -> bool:
+        """Check if x is in the span of vectors."""
         vecs = tuple(vectors)
         if len(vecs) == 0:
             return False
@@ -75,12 +74,14 @@ def lie_closure(
         return rank_V == rank_aug
     
     def brackets(vectors: Iterable[AntiHermitian]) -> Generator[AntiHermitian, None, None]:
+        """Iterate over Lie brackets."""
         for a, x in enumerate(vectors):
             for b, y in enumerate(vectors):
                 if a != b:
                     yield bracket(x, y)
     
     def new_elements(vectors: Iterable[AntiHermitian], max_rank: int) -> dict[str, AntiHermitian]:
+        """Generate new elements in one round of repeated Lie brackets."""
         v = list(vectors)
         elements: dict[str, AntiHermitian] = {}
         idx = 0
@@ -97,6 +98,7 @@ def lie_closure(
         return elements
                 
     def linearly_independent_elements(elements: Mapping[str, AntiHermitian]) -> dict[str, AntiHermitian]:
+        """Select the linearly independent elements."""
         independent: dict[str, AntiHermitian] = {}
         for name, E in elements.items():
             if not in_span(E, independent.values()):
@@ -191,6 +193,7 @@ def structure_constants(
 
 @dataclass(frozen=True)
 class LieAlgebra:
+    _basis: LieBasis
     _G: Hermitian
     _F: AntiSymmetricTensor
 
@@ -203,7 +206,15 @@ class LieAlgebra:
     ):
         G = gram_matrix(basis, inner_product)
         F = structure_constants(basis, inner_product, bracket)
-        return cls(G, F)
+        return cls(basis, G, F)
+
+    @property
+    def basis(self) -> LieBasis:
+        return self._basis
+
+    @property
+    def dim(self) -> int:
+        return self.basis.dim
 
     @property
     def gram_matrix(self) -> Hermitian:

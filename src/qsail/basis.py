@@ -2,7 +2,29 @@ import numpy as np
 
 from dataclasses import dataclass
 from typing import Any, Generator, Mapping, overload
-from .types import AntiHermitian, SquareMatrix, is_anti_hermitian, is_square_matrix
+from .types import AntiHermitian, SquareMatrix, Vector, is_anti_hermitian, is_square_matrix, is_vector
+
+
+@overload
+def basis_vector(b: int, index: int) -> Vector: ...
+@overload
+def basis_vector(b: "LieBasis", index: int) -> Vector: ...
+
+def basis_vector(b: "int | LieBasis", index: int) -> Vector:
+    """Construct a Lie basis vector
+
+    Args:
+        b (int | LieBasis): the basis or the rank of the algebra
+        index (int): the basis vector index
+
+    Returns:
+        Vector: the basis vector
+    """
+    dim = b.dim if isinstance(b, LieBasis) else b
+    e = np.zeros((dim,), dtype=float)
+    e[index] = 1.0
+    assert is_vector(e)
+    return e
 
 
 @dataclass(frozen=True)
@@ -54,6 +76,10 @@ class LieBasis:
     @property
     def elements(self) -> tuple[AntiHermitian, ...]:
         return self._elements
+    
+    @property
+    def vectors(self) -> tuple[Vector, ...]:
+        return tuple([basis_vector(self, i) for i in range(self.dim)])
     
     @property
     def labels(self) -> tuple[str, ...]:

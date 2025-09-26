@@ -1,1 +1,1 @@
-from .util import pauli
+from .util import pauli  # noqa: F401
