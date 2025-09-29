@@ -1,6 +1,6 @@
 import numpy as np
-from qsail.basis import LieBasis, special_unitary_basis
-from qsail.algebra import gram_matrix, structure_constants
+from pulseseek.basis import LieBasis, special_unitary_basis
+from pulseseek.algebra import gram_matrix, structure_constants
 
 
 def test_su2_basis():

@@ -1,7 +1,7 @@
 import numpy as np
-from qsail import pauli
-from qsail.basis import special_unitary_basis
-from qsail.system import ControlSystem
+from pulseseek import pauli
+from pulseseek.basis import special_unitary_basis
+from pulseseek.system import ControlSystem
 
 
 def test_control_system():

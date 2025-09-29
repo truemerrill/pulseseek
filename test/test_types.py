@@ -1,5 +1,5 @@
 import numpy as np
-from qsail.types import (
+from pulseseek.types import (
     is_matrix,
     is_square_matrix,
     is_hermitian,

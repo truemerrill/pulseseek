@@ -1,8 +1,8 @@
 import numpy as np
 
-from qsail.algebra import LieAlgebra
-from qsail.basis import special_unitary_basis
-from qsail.polynomial import LiePolynomial
+from pulseseek.algebra import LieAlgebra
+from pulseseek.basis import special_unitary_basis
+from pulseseek.polynomial import LiePolynomial
 
 
 def test_polynomial_toggle():
