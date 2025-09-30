@@ -1,12 +1,13 @@
 import numpy as np
+import jax.numpy as jnp
 from pulseseek.basis import LieBasis, special_unitary_basis
 from pulseseek.algebra import gram_matrix, structure_constants
 
 
 def test_su2_basis():
-    X = np.array([[0, 1], [1, 0]])
-    Y = np.array([[0, -1j], [1j, 0]])
-    Z = np.array([[1, 0], [0, -1]])
+    X = jnp.array([[0, 1], [1, 0]])
+    Y = jnp.array([[0, -1j], [1j, 0]])
+    Z = jnp.array([[1, 0], [0, -1]])
     su2 = LieBasis.new({
         "iX": 1j * X,
         "iY": 1j * Y,
@@ -53,9 +54,9 @@ def test_su2_structure_constants():
 
 
 def test_su2_non_orthanormal_structure_constants():
-    X = np.array([[0, 1], [1, 0]])
-    Y = np.array([[0, -1j], [1j, 0]])
-    Z = np.array([[1, 0], [0, -1]])
+    X = jnp.array([[0, 1], [1, 0]])
+    Y = jnp.array([[0, -1j], [1j, 0]])
+    Z = jnp.array([[1, 0], [0, -1]])
 
     A1 = 1j * X
     A2 = 1j * Y

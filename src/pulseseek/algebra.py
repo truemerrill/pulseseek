@@ -1,7 +1,17 @@
-from dataclasses import dataclass
-from math import factorial
-from typing import Any, Callable, Mapping, Generator, Iterable, overload
+import functools
+from typing import (
+    Any,
+    Callable,
+    Generator,
+    Hashable,
+    Iterable,
+    Mapping,
+    NamedTuple,
+    cast,
+)
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from .basis import LieBasis
@@ -9,16 +19,22 @@ from .types import (
     AntiHermitian,
     AntiSymmetricTensor,
     Hermitian,
+    Scalar,
     SquareMatrix,
     Vector,
     is_antisymmetric_tensor,
     is_hermitian,
-    is_square_matrix,
-    is_vector,
 )
+from .util import hash_array
 
-InnerProduct = Callable[[AntiHermitian, AntiHermitian], float]
-Bracket = Callable[[AntiHermitian, AntiHermitian], AntiHermitian]
+# Required to increase numerical precision
+jax.config.update("jax_enable_x64", True)
+
+
+# --- Matrix representation ---------------------------------------------------
+
+MatrixInnerProduct = Callable[[AntiHermitian, AntiHermitian], float]
+MatrixBracket = Callable[[AntiHermitian, AntiHermitian], AntiHermitian]
 
 
 def hilbert_schmidt_inner_product(X: AntiHermitian, Y: AntiHermitian) -> float:
@@ -34,9 +50,9 @@ NameElement = Callable[[int], str]
 
 def lie_closure(
     elements: Mapping[str, Any],
-    bracket: Bracket = matrix_commutator,
+    bracket: MatrixBracket = matrix_commutator,
     name_element: NameElement = lambda idx: f"_A{idx}",
-    max_rank: int = 100
+    max_rank: int = 100,
 ) -> LieBasis:
     """Construct a basis closed under the Lie bracket that spans the elements.
 
@@ -44,10 +60,10 @@ def lie_closure(
         elements (Mapping[str, Any]): the elements to span.  The keys should be
             the names of the elements and the values should be the elements
             themselves.  The elements must be anti-Hermitian.
-        bracket (Bracket, optional): the Lie bracket. Defaults to 
+        bracket (MatrixBracket, optional): the Lie bracket. Defaults to
             matrix_commutator.
         name_element (NameElement, optional): A callback function that is used
-            to generate names of created algebra elements. Defaults to 
+            to generate names of created algebra elements. Defaults to
             `lambda idx: f"_A{idx}"`.
         max_rank (int, optional): the maximum rank of the generated Lie
             algebra.  If the rank exceeds max_rank, the function raises a
@@ -72,20 +88,24 @@ def lie_closure(
         rank_V = np.linalg.matrix_rank(V, tol=atol)
         rank_aug = np.linalg.matrix_rank(np.column_stack([V, X]), tol=atol)
         return rank_V == rank_aug
-    
-    def brackets(vectors: Iterable[AntiHermitian]) -> Generator[AntiHermitian, None, None]:
+
+    def brackets(
+        vectors: Iterable[AntiHermitian],
+    ) -> Generator[AntiHermitian, None, None]:
         """Iterate over Lie brackets."""
         for a, x in enumerate(vectors):
             for b, y in enumerate(vectors):
                 if a != b:
                     yield bracket(x, y)
-    
-    def new_elements(vectors: Iterable[AntiHermitian], max_rank: int) -> dict[str, AntiHermitian]:
+
+    def new_elements(
+        vectors: Iterable[AntiHermitian], max_rank: int
+    ) -> dict[str, AntiHermitian]:
         """Generate new elements in one round of repeated Lie brackets."""
         v = list(vectors)
         elements: dict[str, AntiHermitian] = {}
         idx = 0
-        
+
         for E in brackets(v):
             if not in_span(E, v):
                 v.append(E)
@@ -94,10 +114,14 @@ def lie_closure(
                 elements[name] = E
 
             if len(v) > max_rank:
-                raise ValueError("Maximum rank exceeded, Lie algebra may be infinite rank")
+                raise ValueError(
+                    "Maximum rank exceeded, Lie algebra may be infinite rank"
+                )
         return elements
-                
-    def linearly_independent_elements(elements: Mapping[str, AntiHermitian]) -> dict[str, AntiHermitian]:
+
+    def linearly_independent_elements(
+        elements: Mapping[str, AntiHermitian],
+    ) -> dict[str, AntiHermitian]:
         """Select the linearly independent elements."""
         independent: dict[str, AntiHermitian] = {}
         for name, E in elements.items():
@@ -114,19 +138,19 @@ def lie_closure(
         if len(V) == 0:
             break
         closure = {**closure, **V}
-    
+
     return LieBasis.new(closure)
 
 
 def gram_matrix(
-    basis: LieBasis, inner_product: InnerProduct = hilbert_schmidt_inner_product
+    basis: LieBasis, inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product
 ) -> Hermitian:
     """Calculate the Gram matrix of a Lie basis
 
     Args:
         basis (LieBasis): the Lie basis
-        inner_product (InnerProduct, optional): the inner product. Defaults to
-            hilbert_schmidt_inner_product.
+        inner_product (MatrixInnerProduct, optional): the inner product.
+            Defaults to hilbert_schmidt_inner_product.
 
     Returns:
         Hermitian: the Gram matrix
@@ -138,14 +162,15 @@ def gram_matrix(
             A = basis[a]
             B = basis[b]
             G[a, b] = inner_product(A, B)
+    G = jnp.array(G)
     assert is_hermitian(G, dimension=m)
     return G
 
 
 def structure_constants(
     basis: LieBasis,
-    inner_product: InnerProduct = hilbert_schmidt_inner_product,
-    bracket: Bracket = matrix_commutator,
+    inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
+    bracket: MatrixBracket = matrix_commutator,
 ) -> AntiSymmetricTensor:
     """Calculate the structure constant tensor for a Lie basis
 
@@ -167,9 +192,9 @@ def structure_constants(
 
     Args:
         basis (LieBasis): the Lie basis
-        inner_product (InnerProduct, optional): the inner product. Defaults to
-            hilbert_schmidt_inner_product.
-        bracket (Bracket, optional): the Lie bracket. Defaults to
+        inner_product (MatrixInnerProduct, optional): the inner product.
+            Defaults to hilbert_schmidt_inner_product.
+        bracket (MatrixBracket, optional): the Lie bracket. Defaults to
             matrix_commutator.
 
     Returns:
@@ -178,7 +203,7 @@ def structure_constants(
     m = basis.dim
     S = np.zeros((m, m, m), dtype=float)
     G = gram_matrix(basis, inner_product)
-    Ginv = np.linalg.inv(G)
+    Ginv = jnp.linalg.inv(G)
 
     for b, B in enumerate(basis.elements):
         for c, C in enumerate(basis.elements):
@@ -186,126 +211,120 @@ def structure_constants(
             for a, A in enumerate(basis.elements):
                 S[a, b, c] = inner_product(A, ad_B_C)
 
-    F = np.einsum("ad,dbc->abc", Ginv, S, optimize=True)
+    F = jnp.einsum("ad,dbc->abc", Ginv, S, optimize=True)
     assert is_antisymmetric_tensor(F, dimension=m)
     return F
 
 
-@dataclass(frozen=True)
-class LieAlgebra:
-    _basis: LieBasis
-    _G: Hermitian
-    _F: AntiSymmetricTensor
+# --- Lie algebra representation ----------------------------------------------
 
-    @classmethod
-    def new(
-        cls,
-        basis: LieBasis,
-        inner_product: InnerProduct = hilbert_schmidt_inner_product,
-        bracket: Bracket = matrix_commutator,
-    ):
-        G = gram_matrix(basis, inner_product)
-        F = structure_constants(basis, inner_product, bracket)
-        return cls(basis, G, F)
+LieInnerProduct = Callable[[Vector, Vector], Scalar]
+LieBracket = Callable[[Vector, Vector], Vector]
 
-    @property
-    def basis(self) -> LieBasis:
-        return self._basis
+
+class LieAlgebra(NamedTuple):
+    basis: LieBasis
+    G: Hermitian
+    F: AntiSymmetricTensor
+
+    def __hash__(self) -> int:
+        return hash((self.basis, hash_array(self.G), hash_array(self.F)))
+
+    def __eq__(self, other: Hashable) -> bool:
+        return hash(self) == hash(other)
 
     @property
     def dim(self) -> int:
-        return self.basis.dim
+        return self.G.shape[0]
 
-    @property
-    def gram_matrix(self) -> Hermitian:
-        return self._G
 
-    @property
-    def structure_constants(self) -> AntiSymmetricTensor:
-        return self._F
+def lie_algebra(
+    basis: LieBasis,
+    inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
+    bracket: MatrixBracket = matrix_commutator,
+) -> LieAlgebra:
+    """Construct a LieAlgebra from a basis, inner_product, and bracket
 
-    def inner_product(self, a: Vector, b: Vector) -> float:
-        """Compute the inner product of two vectors using the Gram matrix
+    Args:
+        basis (LieBasis): the Lie basis set in the matrix representation.
+        inner_product (MatrixInnerProduct, optional): the inner product.
+            Defaults to hilbert_schmidt_inner_product.
+        bracket (MatrixBracket, optional): the bracket. Defaults to
+            matrix_commutator.
+
+    Returns:
+        LieAlgebra: _description_
+    """
+    G = gram_matrix(basis, inner_product)
+    F = structure_constants(basis, inner_product, bracket)
+    return LieAlgebra(basis, G, F)
+
+
+@functools.cache
+def lie_inner_product(algebra: LieAlgebra) -> LieInnerProduct:
+    G = algebra.G
+
+    @jax.jit
+    def inner_product(x: Vector, y: Vector) -> Scalar:
+        ip = x @ G @ y
+        return cast(Scalar, ip)
+
+    return inner_product
+
+
+@functools.cache
+def lie_bracket(algebra: LieAlgebra) -> LieBracket:
+    F = algebra.F
+
+    @jax.jit
+    def bracket(x: Vector, y: Vector) -> Vector:
+        z = jnp.einsum("kij,i,j->k", F, x, y, optimize=True)
+        return cast(Vector, z)
+
+    return bracket
+
+
+class LieAdjointCarry(NamedTuple):
+    result: Vector
+    term: Vector
+    n: jax.Array
+
+
+@functools.cache
+def lie_adjoint_action(
+    algebra: LieAlgebra, atol: float = 1e-12, max_terms: int = 1000, max_order: int = 32
+) -> LieBracket:
+    inner_product = lie_inner_product(algebra)
+    bracket = lie_bracket(algebra)
+
+    @jax.jit
+    def adjoint_action_horner(x: Vector, y: Vector) -> Vector:
+        """Computes the Taylor series of Ad_{exp(x)} y using Horner's method.
 
         Args:
-            a (Vector): a Lie algebra vector
-            b (Vector): a Lie algebra vector
+            x (Vector): Lie algebra vector
+            y (Vector): Lie algebra vector
 
         Returns:
-            float: the inner product
+            Vector: the adjoint action
         """
-        p = np.einsum("i,ij,j->", a, self.gram_matrix, b, optimize=True)
-        assert p.ndim == 0
-        return float(p)
+        eps = jnp.array(atol)
 
-    def bracket(self, a: Vector, b: Vector) -> Vector:
-        """Compute the Lie bracket of two vectors using the structure constants
+        def body(carry: LieAdjointCarry) -> LieAdjointCarry:
+            n = carry.n + 1
+            term = cast(Vector, bracket(x, carry.term) / n)  # type: ignore
+            result = carry.result + term
+            return LieAdjointCarry(result, term, n)
 
-        Args:
-            a (Vector): a Lie algebra vector
-            b (Vector): a Lie algebra vector
+        def cond(carry: LieAdjointCarry) -> jax.Array:
+            norm = inner_product(carry.term, carry.term)
+            is_not_converged = jnp.array(norm >= eps).reshape(())
+            is_not_done = jnp.array(carry.n < max_terms).reshape(())
+            return jnp.logical_and(is_not_converged, is_not_done)
 
-        Returns:
-            Vector: the Lie bracket
-        """
-        P = np.einsum("kij,i,j->k", self.structure_constants, a, b, optimize=True)
-        assert is_vector(P)
-        return P
+        n = jnp.array([0])
+        initial = LieAdjointCarry(y, y, n)
+        final = jax.lax.while_loop(cond, body, initial)
+        return final.result
 
-    def adjoint(self, a: Vector) -> SquareMatrix:
-        """Compute the matrix representation of the adjoint endomorphism ad_{a}
-
-        Args:
-            a (Vector): a Lie algebra vector
-
-        Returns:
-            SquareMatrix: the adjoint matrix.  Usually this is anti-Hermitian
-                but that may depend on the inner product.
-        """
-        A = np.einsum("kij,i->kj", self.structure_constants, a)
-        assert is_square_matrix(A)
-        return A
-
-    def adjoint_action(
-        self, a: Vector, b: Vector, atol: float = 1e-12, max_order: int = 1000
-    ) -> Vector:
-        """Compute Ad_{exp(a)}(b) via a truncated Lie bracket expansion
-
-        Note:
-            If `a`, `b` are Lie algebra vectors and `A = exp(a)`, then
-
-            .. math::
-
-                A^\\dagger b A = Ad_{A}(b) = Ad_{exp(a)}(b)
-
-        Args:
-            a (Vector): Lie algebra vector
-            b (Vector): Lie algebra vector
-            atol (float, optional): the absolute tolerance for convergence.
-                Defaults to 1e-12.
-            max_order (int, optional): the maximum order of the Lie bracket
-                series. Defaults to 1000.
-
-        Raises:
-            ValueError: if the series fails to converge
-
-        Returns:
-            Vector: the result of the adjoint action
-        """
-        x = b.copy()
-        term = b.copy()
-        converged = False
-
-        for r in range(1, max_order + 1):
-            term = self.bracket(a, term)
-            incr = term / float(factorial(r))
-            norm = float(np.sqrt(self.inner_product(incr, incr)))
-            x = x + incr
-
-            if norm < atol:
-                converged = True
-                break
-
-        if not converged:
-            raise ValueError(f"Failed to converge after {max_order} iterations")
-        return x
+    return adjoint_action_horner

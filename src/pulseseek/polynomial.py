@@ -1,9 +1,10 @@
 import numpy as np
+import jax.numpy as jnp
 from math import factorial
 from dataclasses import dataclass
 
 from typing import Any, Iterable
-from .algebra import LieAlgebra
+from .algebra import LieAlgebra, lie_bracket
 from .types import Vector, is_vector
 
 
@@ -48,16 +49,17 @@ from .types import Vector, is_vector
 def _lie_polynomial_toggle_term(y: "LiePolynomial", x: Vector, m: int) -> Vector:
     algebra = y.algebra
     dim = algebra.dim
+    bracket = lie_bracket(algebra)
     
     def ad_x_n(x: Vector, n: int, y: Vector) -> Vector:
         """Compute ad_X^n (y)"""
         p = y.copy()
         assert is_vector(p)
         for _ in range(n):
-            p = algebra.bracket(x, p)
+            p = bracket(x, p)
         return p
 
-    zero = np.zeros((dim,), dtype=float)
+    zero = jnp.zeros((dim,), dtype=float)
     assert is_vector(zero, dimension=dim)
     
     z_m = zero

@@ -1,12 +1,12 @@
 import numpy as np
 
-from pulseseek.algebra import LieAlgebra
+from pulseseek.algebra import lie_algebra
 from pulseseek.basis import special_unitary_basis
 from pulseseek.polynomial import LiePolynomial
 
 
 def test_polynomial_toggle():
-    su2 = LieAlgebra.new(special_unitary_basis(2))
+    su2 = lie_algebra(special_unitary_basis(2))
     Ex, Ey, Ez = su2.basis.vectors
     Y = LiePolynomial.new(su2, degree=30, coefficients=[Ey])
     

@@ -1,9 +1,7 @@
 from typing import Any, Protocol, Self, TypeGuard, Iterator, runtime_checkable
 import numpy as np
 import numpy.typing as npt
-
-
-Array = npt.NDArray[Any]
+import jax
 
 
 class SupportsAddition(Protocol):
@@ -45,10 +43,27 @@ class Vector(
     def ndim(self) -> int: ...
 
     def copy(self) -> Self: ...
-    
+    def tobytes(self) -> bytes: ...
+
     def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
     def __getitem__(self, key: Any) -> Any: ...
     def __iter__(self) -> Iterator[Any]: ...
+
+
+def is_scalar(x: Any) -> TypeGuard[Scalar]:
+    """Check if x is a Scalar
+
+    Args:
+        x (Any): the object to check
+
+    Returns:
+        TypeGuard[Scalar]: whether the object is a scalar
+    """
+    if hasattr(x, "shape"):
+        return x.shape == (1,)
+    if isinstance(x, (float, complex)):
+        return True
+    return False
 
 
 def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[Vector]:
@@ -61,7 +76,7 @@ def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[Vector]:
     Returns:
         TypeGuard[Vector]: whether x is a vector
     """
-    if not isinstance(x, Vector):
+    if not isinstance(x, jax.Array):
         return False
     if x.ndim != 1:
         return False
@@ -86,8 +101,8 @@ class Matrix(
 
     @property
     def ndim(self) -> int: ...
-
-    def reshape(self, *args) -> Array: ...
+    def tobytes(self) -> bytes: ...
+    def reshape(self, *args) -> npt.NDArray[Any]: ...
 
     def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
     def __getitem__(self, key: Any) -> Any: ...
@@ -115,7 +130,7 @@ def is_matrix(x: Any, *, shape: tuple[int, int] | None = None) -> TypeGuard[Matr
     Returns:
         TypeGuard[Matrix]: whether the object is a matrix
     """
-    if not isinstance(x, Matrix):
+    if not isinstance(x, jax.Array):
         return False
     if x.ndim != 2:
         return False
@@ -142,7 +157,7 @@ def is_hermitian(
 ) -> TypeGuard[Hermitian]:
     if not is_square_matrix(x, dimension=dimension):
         return False
-    X = np.asarray(x, dtype=np.complex128)
+    X = np.asarray(x, dtype=np.complex64)
     return np.allclose(X, X.conj().T, atol=atol)
 
 
@@ -151,7 +166,7 @@ def is_anti_hermitian(
 ) -> TypeGuard[AntiHermitian]:
     if not is_square_matrix(x, dimension=dimension):
         return False
-    X = np.asarray(x, dtype=np.complex128)
+    X = np.asarray(x, dtype=np.complex64)
     return np.allclose(X, -X.conj().T, atol=atol)
 
 
@@ -166,6 +181,7 @@ class Tensor(SupportsAddition, SupportsScalarMultiplication, Protocol):
     @property
     def ndim(self) -> int: ...
 
+    def tobytes(self) -> bytes: ...
     def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
     def __getitem__(self, key: Any) -> Any: ...
 
@@ -186,7 +202,7 @@ def is_tensor(x: Any, *, shape: tuple[int, ...] | None = None) -> TypeGuard[Tens
     Returns:
         TypeGuard[Tensor]: whether the object is a tensor
     """
-    if not isinstance(x, Tensor):
+    if not isinstance(x, jax.Array):
         return False
     if shape and x.shape != shape:
         return False
@@ -207,7 +223,7 @@ def is_antisymmetric_tensor(
         TypeGuard[AntiSymmetricTensor]: whether the object is an anti-symmetric
             tensor
     """
-    if not isinstance(x, AntiSymmetricTensor):
+    if not isinstance(x, jax.Array):
         return False
     if x.ndim != 3:
         return False
@@ -219,3 +235,16 @@ def is_antisymmetric_tensor(
         if not np.allclose(x[a], - x[a].T, atol=atol):
             return False
     return True
+
+
+ArrayLike = (
+    Vector
+    | Matrix
+    | SquareMatrix
+    | Hermitian
+    | AntiHermitian
+    | Tensor
+    | AntiSymmetricTensor
+    | npt.NDArray[Any]
+    | jax.Array
+)
