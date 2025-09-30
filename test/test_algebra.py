@@ -137,7 +137,3 @@ def test_lie_closure():
     assert closure_basis.dim == 15
     for x in closure_basis.elements:
         assert np.trace(x) == 0
-
-
-if __name__ == "__main__":
-    test_algebra_adjoint_action()
