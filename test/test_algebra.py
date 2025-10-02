@@ -1,4 +1,5 @@
 import numpy as np
+import jax
 import jax.numpy as jnp
 from scipy.linalg import expm
 
@@ -8,11 +9,51 @@ from pulseseek.algebra import (
     hilbert_schmidt_inner_product,
     matrix_commutator,
     lie_algebra,
+    lie_projection,
+    lie_exponential,
+    lie_logarithm,
     lie_closure,
     lie_inner_product,
     lie_bracket,
     lie_adjoint_action
 )
+
+
+def test_algebra_projection():
+    np.random.seed(42)
+    
+    for n in range(2, 5 + 1):
+        su_n = lie_algebra(special_unitary_basis(n))
+        proj = lie_projection(su_n)
+        rank = len(su_n.basis.elements)
+
+        for _ in range(20):
+            a = np.random.normal(size=rank)
+            A = sum(ai * Ei for ai, Ei in zip(a, su_n.basis.elements))
+            assert is_anti_hermitian(A)
+            b = proj(A)
+            assert np.isclose(a, b).all()
+
+
+def test_algebra_exponential():
+    np.random.seed(42)
+
+    for n in range(2, 5 + 1):
+        su_n = lie_algebra(special_unitary_basis(n))
+        lie_exp = lie_exponential(su_n)
+        rank = len(su_n.basis.elements)
+
+        for _ in range(20):
+            a = jnp.array(np.random.normal(size=rank))
+            assert is_vector(a, dimension=rank)
+            A = lie_exp(a)
+
+            # Compute by hand
+            X = sum(ai * Ei for ai, Ei in zip(a, su_n.basis.elements))
+            assert is_anti_hermitian(X)
+            B = jax.scipy.linalg.expm(X)
+
+            assert np.isclose(A, B).all()
 
 
 def test_algebra_inner_product():

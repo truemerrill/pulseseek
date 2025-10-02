@@ -7,7 +7,6 @@ from typing import (
     Iterable,
     Mapping,
     NamedTuple,
-    cast,
 )
 
 import jax
@@ -24,6 +23,7 @@ from .types import (
     Vector,
     is_antisymmetric_tensor,
     is_hermitian,
+    is_square_matrix,
 )
 from .util import hash_array
 
@@ -33,12 +33,12 @@ jax.config.update("jax_enable_x64", True)
 
 # --- Matrix representation ---------------------------------------------------
 
-MatrixInnerProduct = Callable[[AntiHermitian, AntiHermitian], float]
+MatrixInnerProduct = Callable[[AntiHermitian, AntiHermitian], Scalar]
 MatrixBracket = Callable[[AntiHermitian, AntiHermitian], AntiHermitian]
 
 
-def hilbert_schmidt_inner_product(X: AntiHermitian, Y: AntiHermitian) -> float:
-    return float((-np.trace(X @ Y)).real)
+def hilbert_schmidt_inner_product(X: AntiHermitian, Y: AntiHermitian) -> Scalar:
+    return -jnp.real(jnp.trace(X @ Y))
 
 
 def matrix_commutator(X: SquareMatrix, Y: SquareMatrix) -> SquareMatrix:
@@ -220,6 +220,9 @@ def structure_constants(
 
 LieInnerProduct = Callable[[Vector, Vector], Scalar]
 LieBracket = Callable[[Vector, Vector], Vector]
+LieProjection = Callable[[AntiHermitian], Vector]
+LieExponential = Callable[[Vector], SquareMatrix]
+LieLogarithm = Callable[[SquareMatrix], Vector]
 
 
 class LieAlgebra(NamedTuple):
@@ -261,25 +264,70 @@ def lie_algebra(
 
 
 @functools.cache
+def lie_projection(
+    algebra: LieAlgebra,
+    inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
+) -> LieProjection:
+    Ginv = jnp.linalg.inv(algebra.G)
+    assert is_square_matrix(Ginv)
+
+    @jax.jit
+    def project(matrix: AntiHermitian) -> Vector:
+        h = jnp.array([inner_product(matrix, E) for E in algebra.basis.elements])
+        r = Ginv @ h
+        return r
+
+    return project
+
+
+@functools.cache
+def lie_exponential(algebra: LieAlgebra) -> LieExponential:
+    E = jnp.array(algebra.basis.elements)
+
+    @jax.jit
+    def exp(x: Vector) -> SquareMatrix:
+        X = jnp.einsum("i,ijk->jk", x, E)
+        return jax.scipy.linalg.expm(X)
+
+    return exp
+
+
+@functools.cache
 def lie_inner_product(algebra: LieAlgebra) -> LieInnerProduct:
+    """Construct the inner product function for the algebra
+
+    Args:
+        algebra (LieAlgebra): the Lie algebra
+
+    Returns:
+        LieInnerProduct: the inner product
+    """
     G = algebra.G
 
     @jax.jit
     def inner_product(x: Vector, y: Vector) -> Scalar:
         ip = x @ G @ y
-        return cast(Scalar, ip)
+        return ip
 
     return inner_product
 
 
 @functools.cache
 def lie_bracket(algebra: LieAlgebra) -> LieBracket:
+    """Construct the Lie bracket function for the algebra
+
+    Args:
+        algebra (LieAlgebra): the Lie algebra
+
+    Returns:
+        LieBracket: the lie bracket
+    """
     F = algebra.F
 
     @jax.jit
     def bracket(x: Vector, y: Vector) -> Vector:
         z = jnp.einsum("kij,i,j->k", F, x, y, optimize=True)
-        return cast(Vector, z)
+        return z
 
     return bracket
 
@@ -292,8 +340,28 @@ class LieAdjointCarry(NamedTuple):
 
 @functools.cache
 def lie_adjoint_action(
-    algebra: LieAlgebra, atol: float = 1e-12, max_terms: int = 1000, max_order: int = 32
+    algebra: LieAlgebra, atol: float = 1e-12, max_terms: int = 1000
 ) -> LieBracket:
+    """Construct the adjoint action of a Lie algebra
+
+    Note:
+        If `a`, `b` are Lie algebra vectors and `A = exp(a)`, then
+
+        .. math::
+
+            A^\\dagger b A = Ad_{A}(b) = Ad_{exp(a)}(b)
+
+        is the adjoint action.
+
+    Args:
+        algebra (LieAlgebra): the Lie algebra
+        atol (float, optional): the absolute tolerance. Defaults to 1e-12.
+        max_terms (int, optional): the maximum number of terms. Defaults to
+            1000.
+
+    Returns:
+        LieBracket: the adjoint action function
+    """
     inner_product = lie_inner_product(algebra)
     bracket = lie_bracket(algebra)
 
@@ -312,12 +380,12 @@ def lie_adjoint_action(
 
         def body(carry: LieAdjointCarry) -> LieAdjointCarry:
             n = carry.n + 1
-            term = cast(Vector, bracket(x, carry.term) / n)  # type: ignore
+            term = bracket(x, carry.term) / n
             result = carry.result + term
             return LieAdjointCarry(result, term, n)
 
         def cond(carry: LieAdjointCarry) -> jax.Array:
-            norm = inner_product(carry.term, carry.term)
+            norm = jnp.sqrt(inner_product(carry.term, carry.term))
             is_not_converged = jnp.array(norm >= eps).reshape(())
             is_not_done = jnp.array(carry.n < max_terms).reshape(())
             return jnp.logical_and(is_not_converged, is_not_done)

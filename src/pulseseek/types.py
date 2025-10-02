@@ -1,54 +1,9 @@
-from typing import Any, Protocol, Self, TypeGuard, Iterator, runtime_checkable
+from typing import Any, TypeGuard
 import numpy as np
-import numpy.typing as npt
 import jax
 
 
-class SupportsAddition(Protocol):
-    def __add__(self, other: Any, /) -> Self: ...
-    def __radd__(self, other: Any, /) -> Self: ...
-    def __sub__(self, other: Any, /) -> Self: ...
-    def __rsub__(self, other: Any, /) -> Self: ...
-
-
-Scalar = float | complex | np.floating[Any] | np.complexfloating[Any, Any]
-
-
-class SupportsScalarMultiplication(Protocol):
-    def __mul__(self, other: Scalar) -> Self: ...
-    def __rmul__(self, other: Scalar) -> Self: ...
-    def __truediv__(self, other: Scalar) -> Self: ...
-    def __neg__(self) -> Self: ...
-
-
-class SupportsMatrixMultiplication(Protocol):
-    def __matmul__(self, other: Any) -> Self: ...
-    def __rmatmul__(self, other: Any) -> Self: ...
-    def __imatmul__(self, other: Any) -> Self: ...
-
-
-@runtime_checkable
-class Vector(
-    SupportsAddition,
-    SupportsScalarMultiplication,
-    Protocol
-):
-    @property
-    def shape(self) -> tuple[int]: ...
-
-    @property
-    def dtype(self) -> np.dtype: ...
-
-    @property
-    def ndim(self) -> int: ...
-
-    def copy(self) -> Self: ...
-    def tobytes(self) -> bytes: ...
-
-    def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
-    def __getitem__(self, key: Any) -> Any: ...
-    def __iter__(self) -> Iterator[Any]: ...
-
+Scalar = float | complex | np.floating[Any] | np.complexfloating[Any, Any] | jax.Array
 
 def is_scalar(x: Any) -> TypeGuard[Scalar]:
     """Check if x is a Scalar
@@ -64,6 +19,9 @@ def is_scalar(x: Any) -> TypeGuard[Scalar]:
     if isinstance(x, (float, complex)):
         return True
     return False
+
+
+Vector = jax.Array
 
 
 def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[Vector]:
@@ -86,38 +44,10 @@ def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[Vector]:
     return True
 
 
-@runtime_checkable
-class Matrix(
-    SupportsAddition,
-    SupportsScalarMultiplication,
-    SupportsMatrixMultiplication,
-    Protocol,
-):
-    @property
-    def shape(self) -> tuple[int, int]: ...
-
-    @property
-    def dtype(self) -> np.dtype: ...
-
-    @property
-    def ndim(self) -> int: ...
-    def tobytes(self) -> bytes: ...
-    def reshape(self, *args) -> npt.NDArray[Any]: ...
-
-    def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
-    def __getitem__(self, key: Any) -> Any: ...
-
-
-@runtime_checkable
-class SquareMatrix(Matrix, Protocol): ...
-
-
-@runtime_checkable
-class Hermitian(SquareMatrix, Protocol): ...
-
-
-@runtime_checkable
-class AntiHermitian(SquareMatrix, Protocol): ...
+Matrix = jax.Array
+SquareMatrix = Matrix
+Hermitian = Matrix
+AntiHermitian = Matrix
 
 
 def is_matrix(x: Any, *, shape: tuple[int, int] | None = None) -> TypeGuard[Matrix]:
@@ -170,26 +100,8 @@ def is_anti_hermitian(
     return np.allclose(X, -X.conj().T, atol=atol)
 
 
-@runtime_checkable
-class Tensor(SupportsAddition, SupportsScalarMultiplication, Protocol):
-    @property
-    def shape(self) -> tuple[int, ...]: ...
-
-    @property
-    def dtype(self) -> np.dtype: ...
-
-    @property
-    def ndim(self) -> int: ...
-
-    def tobytes(self) -> bytes: ...
-    def __array__(self, dtype: npt.DTypeLike | None = None) -> npt.NDArray[Any]: ...
-    def __getitem__(self, key: Any) -> Any: ...
-
-
-@runtime_checkable
-class AntiSymmetricTensor(Tensor, Protocol):
-    @property
-    def shape(self) -> tuple[int, int, int]: ...
+Tensor = jax.Array
+AntiSymmetricTensor = jax.Array
 
 
 def is_tensor(x: Any, *, shape: tuple[int, ...] | None = None) -> TypeGuard[Tensor]:
@@ -235,16 +147,3 @@ def is_antisymmetric_tensor(
         if not np.allclose(x[a], - x[a].T, atol=atol):
             return False
     return True
-
-
-ArrayLike = (
-    Vector
-    | Matrix
-    | SquareMatrix
-    | Hermitian
-    | AntiHermitian
-    | Tensor
-    | AntiSymmetricTensor
-    | npt.NDArray[Any]
-    | jax.Array
-)

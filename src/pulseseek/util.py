@@ -1,9 +1,9 @@
 import jax.numpy as jnp
+from jax import Array
+from .types import Hermitian, is_hermitian
 
-from .types import ArrayLike, Hermitian, is_hermitian
 
-
-def hash_array(x: ArrayLike) -> int:
+def hash_array(x: Array) -> int:
     return hash((x.shape, x.dtype, x.tobytes()))
 
 
