@@ -11,12 +11,10 @@ from pulseseek.algebra import (
     lie_algebra,
     lie_projection,
     lie_exponential,
-    lie_logarithm,
     lie_closure,
     lie_inner_product,
     lie_bracket,
-    lie_adjoint_action
-)
+    lie_adjoint_action)
 
 
 def test_algebra_projection():
@@ -146,14 +144,14 @@ def test_algebra_adjoint_action():
         assert is_hermitian(H)
 
         # The propagator-like operator
-        U = expm(A)
+        U = expm(- A)
 
         # The toggled Hamiltonian
         Ht = U.conj().T @ H @ U
         assert is_hermitian(Ht)
 
         # Compute the same toggling transformation using the adjoint action
-        ad = Ad(-a, b)
+        ad = Ad(a, b)
         C = jnp.einsum("kij,k->ij", E, ad)
         assert is_anti_hermitian(C)
 

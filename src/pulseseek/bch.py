@@ -198,6 +198,18 @@ def baker_campbell_hausdorff_series(br: BilinearMap) -> BCHSeries:
 def baker_campbell_hausdorff(
     algebra: LieAlgebra, order: int = 8
 ) -> Callable[[Vector, Vector], BCHTerms]:
+    """Generate a function that computes the Baker-Campbell-Hausdorff series.
+
+    Args:
+        algebra (LieAlgebra): the Lie algebra
+        order (int, optional): the maximum order. Defaults to 8.
+
+    Raises:
+        ValueError: raised if the series order is invalid
+
+    Returns:
+        Callable[[Vector, Vector], BCHTerms]: function computing the series
+    """
     bracket = lie_bracket(algebra)
     series = baker_campbell_hausdorff_series(bracket)
 
