@@ -345,11 +345,11 @@ def lie_adjoint_action(
     """Construct the adjoint action of a Lie algebra
 
     Note:
-        If `a`, `b` are Lie algebra vectors and `A = exp(a)`, then
+        If `a`, `b` are Lie algebra vectors then
 
         .. math::
 
-            A^\\dagger b A = Ad_{A}(b) = Ad_{exp(a)}(b)
+            exp(a) b exp(-a) = Ad_{exp(a)}(b)
 
         is the adjoint action.
 

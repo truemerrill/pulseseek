@@ -75,3 +75,21 @@ def lie_polynomial_adjoint_action(
         return LiePolynomial(coeffs)
     
     return adjoint_action_polynomial
+
+
+def lie_polynomial_lmult(algebra: LieAlgebra):
+
+    @jax.jit
+    def lmult(x: Vector, y: LiePolynomial) -> LiePolynomial:
+        ...
+
+    return lmult
+
+
+def lie_polynomial_rmult(algebra: LieAlgebra):
+
+    @jax.jit
+    def rmult(y: LiePolynomial, z: Vector) -> LiePolynomial:
+        ...
+    
+    return rmult

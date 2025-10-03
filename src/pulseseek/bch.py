@@ -1,198 +1,280 @@
-from typing import Callable
+import csv
+import functools
+from dataclasses import dataclass
+from fractions import Fraction
+from importlib.resources import files
+from typing import Callable, Iterable, Iterator, Literal
+
 import jax
+from jax import numpy as jnp
 
-from .algebra import LieAlgebra, lie_bracket
+from .algebra import LieBracket, LieAlgebra, lie_bracket
 from .types import Vector
-
 
 BilinearMap = Callable[[Vector, Vector], Vector]
 BCHSeries = tuple[BilinearMap, ...]
 BCHTerms = tuple[Vector, ...]
+BCHOperation = Literal["X", "Y", "BR"]
 
 
-def baker_campbell_hausdorff_series(br: BilinearMap) -> BCHSeries:
-    """Generate first nine terms in the Baker-Campbell-Hausdorff expansion
+"""
+Baker-Campbell-Hausdorff (BCH) series
 
-    Note:
-        For two Lie algebra elements X and Y, the BCH expansion is
+The BCH series is a series expansion for `z = log(exp(x) exp(y))` in terms of
+x, y, and their repeated Lie brackets.  The series is given by
 
-        .. math::
+.. math::
 
-            Z = log(e^X e^Y) = \\sum_{n = 1}^{\\infty} Z_n(X, Y)
+    z = \\sum_{n > 1} Z_n(x, y)
 
-        where the Z_n are functions that depend only on X, Y and their Lie
-        brackets.  Each Z_n is homogeneous of degree n, meaning
+where the index `n` runs over the expansion terms.  Although a closed form
+expression for the `Z_n(x, y)` was discovered by Dykin, this form is difficult
+to use in practice.  More commonly, the expansion is truncated after only a few
+terms (perhaps as little as 4) since higher-order terms grow quickly in
+complexity with the expansion order.
 
-        .. math::
+In `pulseseek`, we take a slightly different approach for the BCH expansion.
+First, we decompose each term into a sum of terms that are each homogeneous
+in the input parameters,
 
-            Z_n(X, Y) = a^n Z_n(X/a, Y/a)
+.. math::
 
-        This scaling property allows control of truncation error in certain
-        numerical methods.
+    Z_n(x, y) = \\sum_{p + q = n} Z_{(p, q)}(x, y)
 
-    Note:
-        The code below was generated algorithmically from a symbolic
-        representation of the BCH expansion terms using `sagemath`.
+where for all `Z_{(p, q)}`
+
+.. math::
+
+    Z_{(p, q)}(a x, b y) = a^p b^q Z_{(p, q)}(x, y).
+
+The advantage of this decomposition is it permits certain algebraic
+rearrangements of the expansion terms that are not possible in the standard BCH
+expansion.
+
+To manage the extensive book-keeping required to write each `Z_{(p, q)}`
+function, we use an auxiliary computer algebra system (Sage) to produce a CSV
+file which encodes each `Z_{(p, q)}` up to and including BCH order n = 15.
+This data file is included in the `pulseseek` package.
+
+Later during runtime, when the user supplies a Lie bracket function, this
+module's `baker_campbell_hausdorff_compile` function parses the CSV data and
+produces a sequence set of `Z_{(p, q)}` functions.  Each `Z_{(p, q)}` function
+is `jax.jit` compiled for efficiency and speed.
+"""
+
+BCH_MAX_ORDER = 15
+
+
+@dataclass
+class BCHMonomial:
+    order: int
+    degree_x: int
+    degree_y: int
+    coeff: Fraction
+    term: str
+
+
+def _iter_bch_monomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHMonomial]:
+    """Iterate over the BCH monomial terms in the data file
 
     Args:
-        br (BilenearMap): the Lie bracket function.
+        max_order (int, optional): the maximum expansion order. Defaults to 15.
+
+    Yields:
+        Iterator[BCHMonomial]: the BCHMonomial terms.
+    """
+    if max_order > BCH_MAX_ORDER:
+        raise ValueError(
+            "Expansion order is greater than the maximum allowed order "
+            f"{BCH_MAX_ORDER}."
+        )
+
+    data = files("pulseseek").joinpath("bch.csv")
+    with data.open("r", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        for row in reader:
+            monomial = BCHMonomial(
+                order=int(row["order"]),
+                degree_x=int(row["degree_x"]),
+                degree_y=int(row["degree_y"]),
+                coeff=Fraction(row["coefficient"]),
+                term=row["term"],
+            )
+
+            if monomial.order > max_order:
+                break
+
+            yield monomial
+
+
+def _iter_ops(term: str) -> Iterator[BCHOperation]:
+    depth = 0
+    for char in term:
+        if char == "[":
+            depth += 1
+        if char == "]":
+            depth += -1
+            yield "BR"
+        if char == "X":
+            yield "X"
+        if char == "Y":
+            yield "Y"
+    if depth != 0:
+        raise ValueError("Unclosed bracket")
+
+
+def _get_ops(term: str) -> tuple[BCHOperation, ...]:
+    """Parse BCH term into a sequence of RPN operations"""
+    return tuple(_iter_ops(term))
+
+
+@functools.cache
+def _compile_ops(bracket: LieBracket, ops: Iterable[BCHOperation]) -> BilinearMap:
+    """Parse the RPN operations, building a callable."""
+
+    def x(x: Vector, _: Vector) -> Vector:
+        return x
+
+    def y(_: Vector, y: Vector) -> Vector:
+        return y
+
+    def br(left: BilinearMap, right: BilinearMap) -> BilinearMap:
+        def apply(x: Vector, y: Vector) -> Vector:
+            return bracket(left(x, y), right(x, y))
+
+        return apply
+
+    stack: list[BilinearMap] = []
+    for op in ops:
+        if op == "X":
+            stack.append(x)
+        elif op == "Y":
+            stack.append(y)
+        else:
+            b = stack.pop()
+            a = stack.pop()
+            stack.append(br(a, b))
+    if len(stack) != 1:
+        raise RuntimeError("BCH stack not singular.")
+    return stack[0]
+
+
+BCHPolynomial = tuple[BCHMonomial, ...]
+
+
+def _get_polynomial_order_degree(polynomial: BCHPolynomial) -> tuple[int, int, int]:
+    if len(polynomial) < 1:
+        raise RuntimeError("No terms in BCH polynomial")
+    term = polynomial[0]
+
+    for monomial in polynomial:
+        if (
+            (monomial.order != term.order)
+            or (monomial.degree_x != term.degree_x)
+            or (monomial.degree_y != monomial.degree_y)
+        ):
+            raise RuntimeError("Inconsistent BCH polynomial terms")
+    return term.order, term.degree_x, term.degree_y
+
+
+def _compile_polynomial(bracket: LieBracket, polynomial: BCHPolynomial) -> BilinearMap:
+    # Reduce the polynomial by combining coefficients on like terms
+    reduced: dict[tuple[BCHOperation, ...], Fraction] = {}
+    for monomial in polynomial:
+        ops = _get_ops(monomial.term)
+        reduced[ops] = reduced.get(ops, Fraction(0, 1)) + monomial.coeff
+
+    monomial_fns = [
+        (coeff, _compile_ops(bracket, ops))
+        for ops, coeff in reduced.items()
+        if coeff != 0
+    ]
+
+    @jax.jit
+    def poly_fn(x: Vector, y: Vector) -> Vector:
+        z = jnp.zeros(x.shape)
+        for coeff, term_fn in monomial_fns:
+            term = float(coeff) * term_fn(x, y)
+            z += term
+        return z
+
+    return poly_fn
+
+
+def _iter_bch_polynomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHPolynomial]:
+    current_order = 0
+    monomials: dict[tuple[int, int], list[BCHMonomial]] = {}
+
+    for monomial_term in _iter_bch_monomial(max_order):
+        if monomial_term.order != current_order:
+            if current_order > 0:
+                yield from [tuple(t) for t in monomials.values()]
+                monomials = {}
+
+        degree = (monomial_term.degree_x, monomial_term.degree_y)
+        if degree not in monomials:
+            monomials[degree] = []
+        monomials[degree].append(monomial_term)
+
+    yield from [tuple(t) for t in monomials.values()]
+
+
+@functools.cache
+def baker_campbell_hausdorff_compile(
+    bracket: LieBracket, max_order: int = BCH_MAX_ORDER
+) -> dict[tuple[int, int], BilinearMap]:
+    """Compile BCH Z_{(p, q)} functions using the Lie bracket
+
+    Args:
+        bracket (LieBracket): the Lie bracket operation.
+        max_order (int, optional): the maximum BCH expansion order. Defaults to
+           BCH_MAX_ORDER.
 
     Returns:
-        tuple[BilinearMap, ...]: the terms in the series
+        dict[tuple[int, int], BilinearMap]: A dictionary of JIT compiled
+            functions. The keys are tuples `(p, q)` and the values are bilinear
+            mapping functions on the Lie algebra.
     """
+    fns: dict[tuple[int, int], BilinearMap] = {}
+    _compile_ops.cache_clear()
 
-    @jax.jit
-    def bch_1(X: Vector, Y: Vector) -> Vector:
-        term = 1 * X + 1 * Y
-        return term
+    for polynomial in _iter_bch_polynomial(max_order):
+        _, degree_x, degree_y = _get_polynomial_order_degree(polynomial)
+        polynomial_fn = _compile_polynomial(bracket, polynomial)
+        fns[(degree_x, degree_y)] = polynomial_fn
 
-    @jax.jit
-    def bch_2(X: Vector, Y: Vector) -> Vector:
-        term = 1.0 / 2 * br(X, Y)
-        return term
+    # Clear the cache after the compiling pass
+    _compile_ops.cache_clear()
+    return fns
 
-    @jax.jit
-    def bch_3(X: Vector, Y: Vector) -> Vector:
-        term = 1.0 / 12 * br(X, br(X, Y)) + 1.0 / 12 * br(br(X, Y), Y)
-        return term
 
-    @jax.jit
-    def bch_4(X: Vector, Y: Vector) -> Vector:
-        term = 1.0 / 24 * br(X, br(br(X, Y), Y))
-        return term
+@functools.cache
+def baker_campbell_hausdorff_series(
+    bracket: LieBracket, max_order: int = BCH_MAX_ORDER
+) -> BCHSeries:
 
-    @jax.jit
-    def bch_5(X: Vector, Y: Vector) -> Vector:
-        term = (
-            -1.0 / 720 * br(X, br(X, br(X, br(X, Y))))
-            + 1.0 / 180 * br(X, br(X, br(br(X, Y), Y)))
-            + 1.0 / 360 * br(br(X, br(X, Y)), br(X, Y))
-            + 1.0 / 180 * br(X, br(br(br(X, Y), Y), Y))
-            + 1.0 / 120 * br(br(X, Y), br(br(X, Y), Y))
-            + -1.0 / 720 * br(br(br(br(X, Y), Y), Y), Y)
-        )
-        return term
+    Z = baker_campbell_hausdorff_compile(bracket, max_order)
 
-    @jax.jit
-    def bch_6(X: Vector, Y: Vector) -> Vector:
-        term = (
-            -1.0 / 1440 * br(X, br(X, br(X, br(br(X, Y), Y))))
-            + 1.0 / 720 * br(X, br(br(X, br(X, Y)), br(X, Y)))
-            + 1.0 / 360 * br(X, br(X, br(br(br(X, Y), Y), Y)))
-            + 1.0 / 240 * br(X, br(br(X, Y), br(br(X, Y), Y)))
-            + -1.0 / 1440 * br(X, br(br(br(br(X, Y), Y), Y), Y))
-        )
-        return term
+    def iter_pq(n: int) -> Iterator[tuple[int, int]]:
+        for p in range(n + 1):
+            q = n - p
+            yield p, q
 
-    @jax.jit
-    def bch_7(X: Vector, Y: Vector) -> Vector:
-        term = (
-            1.0 / 30240 * br(X, br(X, br(X, br(X, br(X, br(X, Y))))))
-            + -1.0 / 5040 * br(X, br(X, br(X, br(X, br(br(X, Y), Y)))))
-            + 1.0 / 10080 * br(X, br(X, br(br(X, br(X, Y)), br(X, Y))))
-            + 1.0 / 3780 * br(X, br(X, br(X, br(br(br(X, Y), Y), Y))))
-            + 1.0 / 10080 * br(br(X, br(X, br(X, Y))), br(X, br(X, Y)))
-            + 1.0 / 1680 * br(X, br(X, br(br(X, Y), br(br(X, Y), Y))))
-            + 1.0 / 1260 * br(X, br(br(X, br(br(X, Y), Y)), br(X, Y)))
-            + 1.0 / 3780 * br(X, br(X, br(br(br(br(X, Y), Y), Y), Y)))
-            + 1.0 / 2016 * br(br(X, br(X, Y)), br(X, br(br(X, Y), Y)))
-            + -1.0 / 5040 * br(br(br(X, br(X, Y)), br(X, Y)), br(X, Y))
-            + 13.0 / 15120 * br(X, br(br(X, Y), br(br(br(X, Y), Y), Y)))
-            + 1.0 / 10080 * br(br(X, br(br(X, Y), Y)), br(br(X, Y), Y))
-            + -1.0 / 1512 * br(br(X, br(br(br(X, Y), Y), Y)), br(X, Y))
-            + -1.0 / 5040 * br(X, br(br(br(br(br(X, Y), Y), Y), Y), Y))
-            + 1.0 / 1260 * br(br(X, Y), br(br(X, Y), br(br(X, Y), Y)))
-            + -1.0 / 2016 * br(br(X, Y), br(br(br(br(X, Y), Y), Y), Y))
-            + -1.0 / 5040 * br(br(br(X, Y), Y), br(br(br(X, Y), Y), Y))
-            + 1.0 / 30240 * br(br(br(br(br(br(X, Y), Y), Y), Y), Y), Y)
-        )
-        return term
+    def bch_fn(n: int) -> BilinearMap:
+        terms: list[BilinearMap] = []
+        for pq in iter_pq(n):
+            if pq in Z:
+                terms.append(Z[pq])
 
-    @jax.jit
-    def bch_8(X: Vector, Y: Vector) -> Vector:
-        term = (
-            1.0 / 60480 * br(X, br(X, br(X, br(X, br(X, br(br(X, Y), Y))))))
-            + -1.0 / 15120 * br(X, br(X, br(X, br(br(X, br(X, Y)), br(X, Y)))))
-            + -1.0 / 10080 * br(X, br(X, br(X, br(X, br(br(br(X, Y), Y), Y)))))
-            + 1.0 / 20160 * br(X, br(br(X, br(X, br(X, Y))), br(X, br(X, Y))))
-            + -1.0 / 20160 * br(X, br(X, br(X, br(br(X, Y), br(br(X, Y), Y)))))
-            + 1.0 / 2520 * br(X, br(X, br(br(X, br(br(X, Y), Y)), br(X, Y))))
-            + 23.0 / 120960 * br(X, br(X, br(X, br(br(br(br(X, Y), Y), Y), Y))))
-            + 1.0 / 4032 * br(X, br(br(X, br(X, Y)), br(X, br(br(X, Y), Y))))
-            + -1.0 / 10080 * br(X, br(br(br(X, br(X, Y)), br(X, Y)), br(X, Y)))
-            + 13.0 / 30240 * br(X, br(X, br(br(X, Y), br(br(br(X, Y), Y), Y))))
-            + 1.0 / 20160 * br(X, br(br(X, br(br(X, Y), Y)), br(br(X, Y), Y)))
-            + -1.0 / 3024 * br(X, br(br(X, br(br(br(X, Y), Y), Y)), br(X, Y)))
-            + -1.0 / 10080 * br(X, br(X, br(br(br(br(br(X, Y), Y), Y), Y), Y)))
-            + 1.0 / 2520 * br(X, br(br(X, Y), br(br(X, Y), br(br(X, Y), Y))))
-            + -1.0 / 4032 * br(X, br(br(X, Y), br(br(br(br(X, Y), Y), Y), Y)))
-            + -1.0 / 10080 * br(X, br(br(br(X, Y), Y), br(br(br(X, Y), Y), Y)))
-            + 1.0 / 60480 * br(X, br(br(br(br(br(br(X, Y), Y), Y), Y), Y), Y))
-        )
-        return term
-
-    @jax.jit
-    def bch_9(X: Vector, Y: Vector) -> Vector:
-        term = (
-            -1.0 / 1209600 * br(X, br(X, br(X, br(X, br(X, br(X, br(X, br(X, Y))))))))
-            + 1.0 / 151200 * br(X, br(X, br(X, br(X, br(X, br(X, br(br(X, Y), Y)))))))
-            + -1.0 / 100800 * br(X, br(X, br(X, br(X, br(br(X, br(X, Y)), br(X, Y))))))
-            + -1.0 / 56700 * br(X, br(X, br(X, br(X, br(X, br(br(br(X, Y), Y), Y))))))
-            + -1.0 / 43200 * br(X, br(X, br(X, br(X, br(br(X, Y), br(br(X, Y), Y))))))
-            + 1.0 / 75600 * br(X, br(X, br(X, br(br(X, br(br(X, Y), Y)), br(X, Y)))))
-            + 1.0 / 75600 * br(X, br(X, br(X, br(X, br(br(br(br(X, Y), Y), Y), Y)))))
-            + 1.0 / 302400 * br(br(X, br(X, br(X, br(X, Y)))), br(X, br(X, br(X, Y))))
-            + 1.0 / 67200 * br(X, br(X, br(br(X, br(X, Y)), br(X, br(br(X, Y), Y)))))
-            + 1.0 / 43200 * br(X, br(X, br(br(br(X, br(X, Y)), br(X, Y)), br(X, Y))))
-            + 11.0 / 302400 * br(X, br(X, br(X, br(br(X, Y), br(br(br(X, Y), Y), Y)))))
-            + 1.0 / 25200 * br(X, br(br(X, br(X, br(br(X, Y), Y))), br(X, br(X, Y))))
-            + 11.0 / 201600 * br(X, br(X, br(br(X, br(br(X, Y), Y)), br(br(X, Y), Y))))
-            + 11.0 / 151200 * br(X, br(X, br(br(X, br(br(br(X, Y), Y), Y)), br(X, Y))))
-            + 1.0 / 75600 * br(X, br(X, br(X, br(br(br(br(br(X, Y), Y), Y), Y), Y))))
-            + 1.0 / 43200 * br(br(X, br(X, br(X, Y))), br(X, br(X, br(br(X, Y), Y))))
-            + 1.0 / 37800 * br(X, br(br(X, br(X, Y)), br(br(X, br(X, Y)), br(X, Y))))
-            + 23.0 / 302400 * br(X, br(br(X, br(X, Y)), br(X, br(br(br(X, Y), Y), Y))))
-            + -1.0 / 30240 * br(br(X, br(br(X, br(X, Y)), br(X, Y))), br(X, br(X, Y)))
-            + 1.0 / 100800 * br(X, br(X, br(br(X, Y), br(br(X, Y), br(br(X, Y), Y)))))
-            + 1.0 / 33600 * br(X, br(br(X, br(br(X, Y), br(br(X, Y), Y))), br(X, Y)))
-            + 1.0 / 20160 * br(X, br(X, br(br(X, Y), br(br(br(br(X, Y), Y), Y), Y))))
-            + 1.0 / 67200 * br(br(X, br(X, br(br(X, Y), Y))), br(X, br(br(X, Y), Y)))
-            + -17.0 / 100800 * br(X, br(br(br(X, br(br(X, Y), Y)), br(X, Y)), br(X, Y)))
-            + 1.0 / 30240 * br(X, br(X, br(br(br(X, Y), Y), br(br(br(X, Y), Y), Y))))
-            + -1.0 / 21600 * br(br(X, br(X, br(br(br(X, Y), Y), Y))), br(X, br(X, Y)))
-            + -1.0 / 15120 * br(X, br(br(X, br(br(br(X, Y), Y), Y)), br(br(X, Y), Y)))
-            + -1.0 / 7560 * br(X, br(br(X, br(br(br(br(X, Y), Y), Y), Y)), br(X, Y)))
-            + -1.0 / 56700 * br(X, br(X, br(br(br(br(br(br(X, Y), Y), Y), Y), Y), Y)))
-            + 1.0 / 25200 * br(br(X, br(X, Y)), br(X, br(br(X, Y), br(br(X, Y), Y))))
-            + -1.0 / 8400 * br(br(X, br(X, Y)), br(br(X, br(br(X, Y), Y)), br(X, Y)))
-            + -1.0 / 17280 * br(br(X, br(X, Y)), br(X, br(br(br(br(X, Y), Y), Y), Y)))
-            + -1.0 / 25200 * br(br(br(X, br(X, Y)), br(X, Y)), br(X, br(br(X, Y), Y)))
-            + 1.0 / 50400 * br(br(br(br(X, br(X, Y)), br(X, Y)), br(X, Y)), br(X, Y))
-            + 1.0 / 6048 * br(X, br(br(X, Y), br(br(X, Y), br(br(br(X, Y), Y), Y))))
-            + -1.0 / 20160 * br(X, br(br(br(X, Y), br(br(X, Y), Y)), br(br(X, Y), Y)))
-            + -1.0 / 10080 * br(br(X, br(br(X, Y), br(br(br(X, Y), Y), Y))), br(X, Y))
-            + -23.0 / 302400 * br(X, br(br(X, Y), br(br(br(br(br(X, Y), Y), Y), Y), Y)))
-            + 1.0 / 60480 * br(br(X, br(br(X, Y), Y)), br(X, br(br(br(X, Y), Y), Y)))
-            + 1.0 / 20160 * br(br(X, br(br(X, Y), Y)), br(br(X, Y), br(br(X, Y), Y)))
-            + 1.0 / 20160 * br(br(br(X, br(br(X, Y), Y)), br(br(X, Y), Y)), br(X, Y))
-            + -11.0 / 120960 * br(X, br(br(br(X, Y), Y), br(br(br(br(X, Y), Y), Y), Y)))
-            + 1.0 / 10080 * br(br(br(X, br(br(br(X, Y), Y), Y)), br(X, Y)), br(X, Y))
-            + 1.0 / 90720 * br(br(X, br(br(br(X, Y), Y), Y)), br(br(br(X, Y), Y), Y))
-            + 1.0 / 60480 * br(br(X, br(br(br(br(X, Y), Y), Y), Y)), br(br(X, Y), Y))
-            + 1.0 / 21600 * br(br(X, br(br(br(br(br(X, Y), Y), Y), Y), Y)), br(X, Y))
-            + 1.0 / 151200 * br(X, br(br(br(br(br(br(br(X, Y), Y), Y), Y), Y), Y), Y))
-            + 1.0 / 10080 * br(br(X, Y), br(br(X, Y), br(br(X, Y), br(br(X, Y), Y))))
-            + -1.0 / 7560 * br(br(X, Y), br(br(X, Y), br(br(br(br(X, Y), Y), Y), Y)))
-            + -1.0 / 15120 * br(br(X, Y), br(br(br(X, Y), Y), br(br(br(X, Y), Y), Y)))
-            + 1.0 / 15120 * br(br(br(X, Y), br(br(br(X, Y), Y), Y)), br(br(X, Y), Y))
-            + 1.0 / 43200 * br(br(X, Y), br(br(br(br(br(br(X, Y), Y), Y), Y), Y), Y))
-            + 1.0 / 33600 * br(br(br(X, Y), Y), br(br(br(br(br(X, Y), Y), Y), Y), Y))
-            + 1.0 / 60480 * br(br(br(br(X, Y), Y), Y), br(br(br(br(X, Y), Y), Y), Y))
-            + -1.0 / 1209600 * br(br(br(br(br(br(br(br(X, Y), Y), Y), Y), Y), Y), Y), Y)
-        )
-        return term
-
-    return (bch_1, bch_2, bch_3, bch_4, bch_5, bch_6, bch_7, bch_8, bch_9)
+        @jax.jit
+        def fn(x: Vector, y: Vector) -> Vector:
+            z = 0 * x
+            for z_pq in terms:
+                z += z_pq(x, y)
+            return z
+        return fn
+    
+    return tuple(bch_fn(n) for n in range(1, max_order + 1))
 
 
 def baker_campbell_hausdorff(
@@ -221,4 +303,3 @@ def baker_campbell_hausdorff(
         return tuple(Zm(x, y) for Zm in series[0:order])
 
     return bch
-
