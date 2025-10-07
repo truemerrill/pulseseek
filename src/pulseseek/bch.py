@@ -3,18 +3,22 @@ import functools
 from dataclasses import dataclass
 from fractions import Fraction
 from importlib.resources import files
-from typing import Callable, Iterable, Iterator, Literal
+from typing import (
+    Callable,
+    Iterable,
+    Iterator,
+    Literal,
+    NamedTuple,
+    TypeVar,
+    Generic,
+    overload,
+)
 
 import jax
 from jax import numpy as jnp
 
 from .algebra import LieBracket, LieAlgebra, lie_bracket
-from .types import Vector
-
-BilinearMap = Callable[[Vector, Vector], Vector]
-BCHSeries = tuple[BilinearMap, ...]
-BCHTerms = tuple[Vector, ...]
-BCHOperation = Literal["X", "Y", "BR"]
+from .types import Vector, Matrix
 
 
 """
@@ -62,6 +66,13 @@ produces a sequence set of `Z_{(p, q)}` functions.  Each `Z_{(p, q)}` function
 is `jax.jit` compiled for efficiency and speed.
 """
 
+BilinearMap = Callable[[Vector, Vector], Vector]
+BCHTerms = tuple[Vector, ...]
+BCHOperationFlag = Literal["X", "Y", "BR"]
+BCHSlots = Matrix
+BilinearSlotsMap = Callable[[BCHSlots, BCHSlots], Vector]
+BCHCompiledSeries = tuple[BilinearSlotsMap, ...]
+
 BCH_MAX_ORDER = 15
 
 
@@ -72,6 +83,15 @@ class BCHMonomial:
     degree_y: int
     coeff: Fraction
     term: str
+
+
+@dataclass
+class BCHOperation:
+    flag: BCHOperationFlag
+    index: int | None
+
+    def __hash__(self) -> int:
+        return hash((self.flag, self.index))
 
 
 def _iter_bch_monomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHMonomial]:
@@ -109,16 +129,20 @@ def _iter_bch_monomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHMonomial]:
 
 def _iter_ops(term: str) -> Iterator[BCHOperation]:
     depth = 0
+    num_x, num_y = 0, 0
+
     for char in term:
         if char == "[":
             depth += 1
         if char == "]":
             depth += -1
-            yield "BR"
+            yield BCHOperation("BR", None)
         if char == "X":
-            yield "X"
+            yield BCHOperation("X", num_x)
+            num_x += 1
         if char == "Y":
-            yield "Y"
+            yield BCHOperation("Y", num_y)
+            num_y += 1
     if depth != 0:
         raise ValueError("Unclosed bracket")
 
@@ -128,32 +152,97 @@ def _get_ops(term: str) -> tuple[BCHOperation, ...]:
     return tuple(_iter_ops(term))
 
 
-@functools.cache
-def _compile_ops(bracket: LieBracket, ops: Iterable[BCHOperation]) -> BilinearMap:
-    """Parse the RPN operations, building a callable."""
+T = TypeVar("T", BilinearMap, BilinearSlotsMap)
 
-    def x(x: Vector, _: Vector) -> Vector:
+
+class BCHCompilerPrimitives(NamedTuple, Generic[T]):
+    compile_x: Callable[[BCHOperation], T]
+    compile_y: Callable[[BCHOperation], T]
+    compile_br: Callable[[BCHOperation, T, T], T]
+
+
+def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
+    def compile_x(op: BCHOperation) -> BilinearMap:
+        assert op.flag == "X"
+
+        def x(x: Vector, _: Vector) -> Vector:
+            return x
+
         return x
 
-    def y(_: Vector, y: Vector) -> Vector:
+    def compile_y(op: BCHOperation) -> BilinearMap:
+        assert op.flag == "Y"
+
+        def y(_: Vector, y: Vector) -> Vector:
+            return y
+
         return y
 
-    def br(left: BilinearMap, right: BilinearMap) -> BilinearMap:
-        def apply(x: Vector, y: Vector) -> Vector:
+    def compile_br(
+        op: BCHOperation, left: BilinearMap, right: BilinearMap
+    ) -> BilinearMap:
+        assert op.flag == "BR"
+
+        def br(x: Vector, y: Vector) -> Vector:
             return bracket(left(x, y), right(x, y))
 
-        return apply
+        return br
 
-    stack: list[BilinearMap] = []
+    return BCHCompilerPrimitives(compile_x, compile_y, compile_br)
+
+
+def _bch_slots_primitives(
+    bracket: BilinearMap,
+) -> BCHCompilerPrimitives[BilinearSlotsMap]:
+    def compile_x(op: BCHOperation) -> BilinearSlotsMap:
+        assert op.flag == "X" and op.index is not None
+        index = op.index
+
+        def x(x: BCHSlots, y: BCHSlots) -> Vector:
+            xi = x[index]
+            return xi
+
+        return x
+
+    def compile_y(op: BCHOperation) -> BilinearSlotsMap:
+        assert op.flag == "Y" and op.index is not None
+        index = op.index
+
+        def y(_: BCHSlots, y: BCHSlots) -> Vector:
+            yi = y[index]
+            return yi
+
+        return y
+
+    def compile_br(
+        op: BCHOperation, left: BilinearSlotsMap, right: BilinearSlotsMap
+    ) -> BilinearSlotsMap:
+        assert op.flag == "BR" and op.index is None
+
+        def br(x: BCHSlots, y: BCHSlots) -> Vector:
+            return bracket(left(x, y), right(x, y))
+
+        return br
+
+    return BCHCompilerPrimitives(compile_x, compile_y, compile_br)
+
+
+def _compile_ops(
+    primitives: BCHCompilerPrimitives[T], ops: Iterable[BCHOperation]
+) -> T:
+    """Parse the RPN operations, building a callable."""
+    compile_x, compile_y, compile_br = primitives
+
+    stack: list[T] = []
     for op in ops:
-        if op == "X":
-            stack.append(x)
-        elif op == "Y":
-            stack.append(y)
+        if op.flag == "X":
+            stack.append(compile_x(op))
+        elif op.flag == "Y":
+            stack.append(compile_y(op))
         else:
             b = stack.pop()
             a = stack.pop()
-            stack.append(br(a, b))
+            stack.append(compile_br(op, a, b))
     if len(stack) != 1:
         raise RuntimeError("BCH stack not singular.")
     return stack[0]
@@ -177,7 +266,9 @@ def _get_polynomial_order_degree(polynomial: BCHPolynomial) -> tuple[int, int, i
     return term.order, term.degree_x, term.degree_y
 
 
-def _compile_polynomial(bracket: LieBracket, polynomial: BCHPolynomial) -> BilinearMap:
+def _compile_polynomial(
+    primitives: BCHCompilerPrimitives[T], polynomial: BCHPolynomial
+) -> T:
     # Reduce the polynomial by combining coefficients on like terms
     reduced: dict[tuple[BCHOperation, ...], Fraction] = {}
     for monomial in polynomial:
@@ -185,20 +276,20 @@ def _compile_polynomial(bracket: LieBracket, polynomial: BCHPolynomial) -> Bilin
         reduced[ops] = reduced.get(ops, Fraction(0, 1)) + monomial.coeff
 
     monomial_fns = [
-        (coeff, _compile_ops(bracket, ops))
+        (coeff, _compile_ops(primitives, ops))
         for ops, coeff in reduced.items()
         if coeff != 0
     ]
 
     @jax.jit
-    def poly_fn(x: Vector, y: Vector) -> Vector:
+    def poly_fn(x, y):
         z = jnp.zeros(x.shape)
         for coeff, term_fn in monomial_fns:
             term = float(coeff) * term_fn(x, y)
             z += term
         return z
 
-    return poly_fn
+    return poly_fn  # type: ignore
 
 
 def _iter_bch_polynomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHPolynomial]:
@@ -219,48 +310,86 @@ def _iter_bch_polynomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHPolynomi
     yield from [tuple(t) for t in monomials.values()]
 
 
+@overload
+def baker_campbell_hausdorff_compile(
+    bracket: LieBracket,
+    max_order: int = ...,
+    mode: Literal["standard"] = ...,
+) -> dict[tuple[int, int], BilinearMap]: ...
+
+
+@overload
+def baker_campbell_hausdorff_compile(
+    bracket: LieBracket,
+    max_order: int = ...,
+    mode: Literal["slot"] = ...,
+) -> dict[tuple[int, int], BilinearSlotsMap]: ...
+
+
 @functools.cache
 def baker_campbell_hausdorff_compile(
-    bracket: LieBracket, max_order: int = BCH_MAX_ORDER
-) -> dict[tuple[int, int], BilinearMap]:
+    bracket: LieBracket,
+    max_order: int = BCH_MAX_ORDER,
+    mode: Literal["standard", "slot"] = "standard",
+) -> dict[tuple[int, int], T]:
     """Compile BCH Z_{(p, q)} functions using the Lie bracket
 
     Args:
-        bracket (LieBracket): the Lie bracket operation.
+        bracket (LieBracket): the Lie bracket.
         max_order (int, optional): the maximum BCH expansion order. Defaults to
-           BCH_MAX_ORDER.
+            BCH_MAX_ORDER.
+        mode (str, optional): the mode of compilation. Defaults to "standard".
 
     Returns:
-        dict[tuple[int, int], BilinearMap]: A dictionary of JIT compiled
+        dict[tuple[int, int], T]: A dictionary of JIT compiled
             functions. The keys are tuples `(p, q)` and the values are bilinear
             mapping functions on the Lie algebra.
     """
-    fns: dict[tuple[int, int], BilinearMap] = {}
-    _compile_ops.cache_clear()
+    primitives = (
+        _bch_primitives(bracket)
+        if mode == "standard"
+        else _bch_slots_primitives(bracket)
+    )
+    fns = {}
 
     for polynomial in _iter_bch_polynomial(max_order):
         _, degree_x, degree_y = _get_polynomial_order_degree(polynomial)
-        polynomial_fn = _compile_polynomial(bracket, polynomial)
+        polynomial_fn = _compile_polynomial(primitives, polynomial)
         fns[(degree_x, degree_y)] = polynomial_fn
 
-    # Clear the cache after the compiling pass
-    _compile_ops.cache_clear()
     return fns
+
+
+@overload
+def baker_campbell_hausdorff_series(
+    bracket: BilinearMap,
+    max_order: int = ...,
+    mode: Literal["standard"] = ...,
+) -> tuple[BilinearMap, ...]: ...
+
+
+@overload
+def baker_campbell_hausdorff_series(
+    bracket: BilinearSlotsMap,
+    max_order: int = ...,
+    mode: Literal["slot"] = ...,
+) -> tuple[BilinearSlotsMap, ...]: ...
 
 
 @functools.cache
 def baker_campbell_hausdorff_series(
-    bracket: LieBracket, max_order: int = BCH_MAX_ORDER
-) -> BCHSeries:
-
-    Z = baker_campbell_hausdorff_compile(bracket, max_order)
+    bracket: LieBracket,
+    max_order: int = BCH_MAX_ORDER,
+    mode: Literal["standard", "slot"] = "standard",
+) -> tuple:
+    Z = baker_campbell_hausdorff_compile(bracket, max_order, mode)
 
     def iter_pq(n: int) -> Iterator[tuple[int, int]]:
         for p in range(n + 1):
             q = n - p
             yield p, q
 
-    def bch_fn(n: int) -> BilinearMap:
+    def bch_fn_standard(n: int) -> BilinearMap:
         terms: list[BilinearMap] = []
         for pq in iter_pq(n):
             if pq in Z:
@@ -272,9 +401,28 @@ def baker_campbell_hausdorff_series(
             for z_pq in terms:
                 z += z_pq(x, y)
             return z
+
         return fn
-    
-    return tuple(bch_fn(n) for n in range(1, max_order + 1))
+
+    def bch_fn_slot(n: int) -> BilinearSlotsMap:
+        terms: list[BilinearSlotsMap] = []
+        for pq in iter_pq(n):
+            if pq in Z:
+                terms.append(Z[pq])
+
+        @jax.jit
+        def fn(x: BCHSlots, y: BCHSlots) -> Vector:
+            z = 0 * x[:, 0]
+            for z_pq in terms:
+                z += z_pq(x, y)
+            return z
+
+        return fn
+
+    if mode == "standard":
+        return tuple(bch_fn_standard(n) for n in range(1, max_order + 1))
+    else:
+        return tuple(bch_fn_slot(n) for n in range(1, max_order + 1))
 
 
 def baker_campbell_hausdorff(
@@ -303,3 +451,60 @@ def baker_campbell_hausdorff(
         return tuple(Zm(x, y) for Zm in series[0:order])
 
     return bch
+
+
+def _baker_campbell_hausdorff_series_direct(
+    bracket: LieBracket,
+) -> tuple[BilinearMap, ...]:
+    """Build functions for the first five terms of the BCH formula
+
+    Note:
+        This function is used for benchmarking and should not be directly used.
+
+    Args:
+        bracket (LieBracket): the Lie bracket
+
+    Returns:
+        tuple[BilinearMap, ...]: tuple of functions implementing the terms
+    """
+
+    @jax.jit
+    def bch_1(x: Vector, y: Vector) -> Vector:
+        return x + y
+
+    @jax.jit
+    def bch_2(x: Vector, y: Vector) -> Vector:
+        return 1.0 / 2 * bracket(x, y)
+
+    @jax.jit
+    def bch_3(x: Vector, y: Vector) -> Vector:
+        return 1.0 / 12 * (bracket(x, bracket(x, y)) + bracket(y, bracket(y, x)))
+
+    @jax.jit
+    def bch_4(x: Vector, y: Vector) -> Vector:
+        return -1.0 / 24 * (bracket(y, bracket(x, bracket(x, y))))
+
+    @jax.jit
+    def bch_5(x: Vector, y: Vector) -> Vector:
+        return (
+            -1.0
+            / 720
+            * (
+                bracket(y, bracket(y, bracket(y, bracket(y, x))))
+                + bracket(x, bracket(x, bracket(x, bracket(x, y))))
+            )
+            + 1.0
+            / 360
+            * (
+                bracket(x, bracket(y, bracket(y, bracket(y, x))))
+                + bracket(y, bracket(x, bracket(x, bracket(x, y))))
+            )
+            + 1.0
+            / 120
+            * (
+                bracket(y, bracket(x, bracket(y, bracket(x, y))))
+                + bracket(x, bracket(y, bracket(x, bracket(y, x))))
+            )
+        )
+
+    return bch_1, bch_2, bch_3, bch_4, bch_5
