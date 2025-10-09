@@ -67,17 +67,56 @@ is `jax.jit` compiled for efficiency and speed.
 """
 
 BilinearMap = Callable[[Vector, Vector], Vector]
+"""A bilinear mapping between Lie algebra vectors."""
+
 BCHTerms = tuple[Vector, ...]
+"""
+Terms of the BCH expansion. The cumulative sum converges to 
+`log(exp(t x) exp(t y))` when `t` is small.
+"""
+
 BCHOperationFlag = Literal["X", "Y", "BR"]
-BCHSlots = Matrix
-BilinearSlotsMap = Callable[[BCHSlots, BCHSlots], Vector]
-BCHCompiledSeries = tuple[BilinearSlotsMap, ...]
+"""
+A flag describing the interpreted symbol in the BCH DSL language.  Flags are
+used to build a set of instructions that are compiled into a JAX function for
+the BCH term.
+"""
+
+BCHLifting = Matrix
+"""
+The multilinear lifting of the arguments of a BCH term.  The multilinear
+lifting of a sequence of Lie vectors `x_1`, `x_2`, ... `x_p` is the
+column-stacked matrix `[x_1, x_2, ..., x_p]`.
+"""
+
+BCHLiftingMap = Callable[[BCHLifting, BCHLifting], Vector]
+"""A bilinear mapping operating on the multilinear lifting of a BCH term."""
+
+BCHLiftingSeries = tuple[BCHLiftingMap, ...]
+"""A sequence of bilinear maps that produce BCH-family terms."""
+
 
 BCH_MAX_ORDER = 15
 
 
 @dataclass
 class BCHMonomial:
+    """A single BCH bracket monomial (no sums), bihomogeneous in (x, y).
+
+    Note:
+        
+        This object represents one nested Lie-bracket expression built from
+        p copies of x and q copies of y (e.g., [x, [x, y]]). As a multilinear
+        map in its p+q formal arguments it is linear in each slot; after
+        identifying all x-slots with the same x and all y-slots with the same y,
+        the resulting map (x, y) ↦ T(x, y) is bihomogeneous of bidegree (p, q):
+
+        .. math::
+
+            T(a x, b y) = a**p * b**q * T(x, y)
+        
+        for all scalars a, b.    
+    """
     order: int
     degree_x: int
     degree_y: int
@@ -101,7 +140,7 @@ def _iter_bch_monomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHMonomial]:
         max_order (int, optional): the maximum expansion order. Defaults to 15.
 
     Yields:
-        Iterator[BCHMonomial]: the BCHMonomial terms.
+        Iterator[BCHMonomial]: the monomial terms.
     """
     if max_order > BCH_MAX_ORDER:
         raise ValueError(
@@ -113,7 +152,7 @@ def _iter_bch_monomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHMonomial]:
     with data.open("r", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)
         for row in reader:
-            monomial = BCHMonomial(
+            term = BCHMonomial(
                 order=int(row["order"]),
                 degree_x=int(row["degree_x"]),
                 degree_y=int(row["degree_y"]),
@@ -121,13 +160,14 @@ def _iter_bch_monomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHMonomial]:
                 term=row["term"],
             )
 
-            if monomial.order > max_order:
+            if term.order > max_order:
                 break
 
-            yield monomial
+            yield term
 
 
 def _iter_ops(term: str) -> Iterator[BCHOperation]:
+    """Parse the term string and yield a sequence of operations."""
     depth = 0
     num_x, num_y = 0, 0
 
@@ -152,16 +192,19 @@ def _get_ops(term: str) -> tuple[BCHOperation, ...]:
     return tuple(_iter_ops(term))
 
 
-T = TypeVar("T", BilinearMap, BilinearSlotsMap)
+T = TypeVar("T", BilinearMap, BCHLiftingMap)
 
 
 class BCHCompilerPrimitives(NamedTuple, Generic[T]):
+    """A data structure storing factory functions to produce BCH primitives"""
     compile_x: Callable[[BCHOperation], T]
     compile_y: Callable[[BCHOperation], T]
     compile_br: Callable[[BCHOperation, T, T], T]
 
 
 def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
+    """Build the standard BCH primitive factories"""
+    
     def compile_x(op: BCHOperation) -> BilinearMap:
         assert op.flag == "X"
 
@@ -191,35 +234,37 @@ def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
     return BCHCompilerPrimitives(compile_x, compile_y, compile_br)
 
 
-def _bch_slots_primitives(
+def _bch_lifting_primitives(
     bracket: BilinearMap,
-) -> BCHCompilerPrimitives[BilinearSlotsMap]:
-    def compile_x(op: BCHOperation) -> BilinearSlotsMap:
+) -> BCHCompilerPrimitives[BCHLiftingMap]:
+    """Build the 'lifting' BCH primitive factories"""
+
+    def compile_x(op: BCHOperation) -> BCHLiftingMap:
         assert op.flag == "X" and op.index is not None
         index = op.index
 
-        def x(x: BCHSlots, y: BCHSlots) -> Vector:
-            xi = x[index]
+        def x(x: BCHLifting, y: BCHLifting) -> Vector:
+            xi = x[:, index]
             return xi
 
         return x
 
-    def compile_y(op: BCHOperation) -> BilinearSlotsMap:
+    def compile_y(op: BCHOperation) -> BCHLiftingMap:
         assert op.flag == "Y" and op.index is not None
         index = op.index
 
-        def y(_: BCHSlots, y: BCHSlots) -> Vector:
-            yi = y[index]
+        def y(_: BCHLifting, y: BCHLifting) -> Vector:
+            yi = y[:, index]
             return yi
 
         return y
 
     def compile_br(
-        op: BCHOperation, left: BilinearSlotsMap, right: BilinearSlotsMap
-    ) -> BilinearSlotsMap:
+        op: BCHOperation, left: BCHLiftingMap, right: BCHLiftingMap
+    ) -> BCHLiftingMap:
         assert op.flag == "BR" and op.index is None
 
-        def br(x: BCHSlots, y: BCHSlots) -> Vector:
+        def br(x: BCHLifting, y: BCHLifting) -> Vector:
             return bracket(left(x, y), right(x, y))
 
         return br
@@ -267,7 +312,8 @@ def _get_polynomial_order_degree(polynomial: BCHPolynomial) -> tuple[int, int, i
 
 
 def _compile_polynomial(
-    primitives: BCHCompilerPrimitives[T], polynomial: BCHPolynomial
+    primitives: BCHCompilerPrimitives[T],
+    polynomial: BCHPolynomial,
 ) -> T:
     # Reduce the polynomial by combining coefficients on like terms
     reduced: dict[tuple[BCHOperation, ...], Fraction] = {}
@@ -283,13 +329,13 @@ def _compile_polynomial(
 
     @jax.jit
     def poly_fn(x, y):
-        z = jnp.zeros(x.shape)
+        z = jnp.zeros((x.shape[0],))
         for coeff, term_fn in monomial_fns:
             term = float(coeff) * term_fn(x, y)
             z += term
         return z
 
-    return poly_fn  # type: ignore
+    return poly_fn # type: ignore
 
 
 def _iter_bch_polynomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHPolynomial]:
@@ -322,15 +368,15 @@ def baker_campbell_hausdorff_compile(
 def baker_campbell_hausdorff_compile(
     bracket: LieBracket,
     max_order: int = ...,
-    mode: Literal["slot"] = ...,
-) -> dict[tuple[int, int], BilinearSlotsMap]: ...
+    mode: Literal["lifting"] = ...,
+) -> dict[tuple[int, int], BCHLiftingMap]: ...
 
 
 @functools.cache
 def baker_campbell_hausdorff_compile(
     bracket: LieBracket,
     max_order: int = BCH_MAX_ORDER,
-    mode: Literal["standard", "slot"] = "standard",
+    mode: Literal["standard", "lifting"] = "standard",
 ) -> dict[tuple[int, int], T]:
     """Compile BCH Z_{(p, q)} functions using the Lie bracket
 
@@ -341,14 +387,14 @@ def baker_campbell_hausdorff_compile(
         mode (str, optional): the mode of compilation. Defaults to "standard".
 
     Returns:
-        dict[tuple[int, int], T]: A dictionary of JIT compiled
-            functions. The keys are tuples `(p, q)` and the values are bilinear
-            mapping functions on the Lie algebra.
+        dict[tuple[int, int], T]: A dictionary of JIT compiled functions. The
+            keys are tuples `(p, q)` and the values are bilinear mapping
+            functions on the Lie algebra.
     """
     primitives = (
         _bch_primitives(bracket)
         if mode == "standard"
-        else _bch_slots_primitives(bracket)
+        else _bch_lifting_primitives(bracket)
     )
     fns = {}
 
@@ -370,17 +416,17 @@ def baker_campbell_hausdorff_series(
 
 @overload
 def baker_campbell_hausdorff_series(
-    bracket: BilinearSlotsMap,
+    bracket: BCHLiftingMap,
     max_order: int = ...,
-    mode: Literal["slot"] = ...,
-) -> tuple[BilinearSlotsMap, ...]: ...
+    mode: Literal["lifting"] = ...,
+) -> tuple[BCHLiftingMap, ...]: ...
 
 
 @functools.cache
 def baker_campbell_hausdorff_series(
     bracket: LieBracket,
     max_order: int = BCH_MAX_ORDER,
-    mode: Literal["standard", "slot"] = "standard",
+    mode: Literal["standard", "lifting"] = "standard",
 ) -> tuple:
     Z = baker_campbell_hausdorff_compile(bracket, max_order, mode)
 
@@ -404,14 +450,14 @@ def baker_campbell_hausdorff_series(
 
         return fn
 
-    def bch_fn_slot(n: int) -> BilinearSlotsMap:
-        terms: list[BilinearSlotsMap] = []
+    def bch_fn_slot(n: int) -> BCHLiftingMap:
+        terms: list[BCHLiftingMap] = []
         for pq in iter_pq(n):
             if pq in Z:
                 terms.append(Z[pq])
 
         @jax.jit
-        def fn(x: BCHSlots, y: BCHSlots) -> Vector:
+        def fn(x: BCHLifting, y: BCHLifting) -> Vector:
             z = 0 * x[:, 0]
             for z_pq in terms:
                 z += z_pq(x, y)

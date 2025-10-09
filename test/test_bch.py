@@ -1,6 +1,6 @@
 from pulseseek.basis import special_unitary_basis
-from pulseseek.algebra import lie_algebra, lie_projection
-from pulseseek.bch import baker_campbell_hausdorff
+from pulseseek.algebra import lie_algebra, lie_projection, lie_bracket
+from pulseseek.bch import baker_campbell_hausdorff, baker_campbell_hausdorff_series
 from pulseseek.types import is_anti_hermitian
 
 import jax.numpy as jnp
@@ -32,3 +32,30 @@ def test_baker_campbell_hausdorff():
     assert is_anti_hermitian(R)
     r = project(R)
     assert jnp.allclose(er, r, atol=eps ** 10)    
+
+
+def test_baker_campbell_hausdorff_series_lifting():
+    su2 = lie_algebra(special_unitary_basis(2))
+    bracket = lie_bracket(su2)
+    ex, ey, ez = su2.basis.vectors
+
+    def lifting(x, degree: int):
+        return jnp.column_stack([x for _ in range(degree)])
+
+    eps = 1e-1
+    series = baker_campbell_hausdorff_series(bracket, mode="lifting")
+
+    terms = []
+    for i, fn in enumerate(series):
+        print(f"Order: {i + 1}")
+        terms.append(fn(lifting(eps * ex, i + 1), lifting(eps * ey, i + 1)))
+
+    # terms = tuple(fn(lifting(eps * ex, i + 1), lifting(eps * ey, i + 1)) for i, fn in enumerate(series))
+
+    # We can compute the first few terms analytically
+    assert jnp.allclose(terms[0], eps * (ex + ey))
+    assert jnp.allclose(terms[1], - eps**2 * ez)
+    assert jnp.allclose(terms[2], - eps**3 / 3 * (ex + ey))
+    assert jnp.allclose(terms[3], 0 * ez)
+    assert jnp.allclose(terms[4], - eps**5 / 15 * (ex + ey))
+    assert jnp.allclose(terms[5], 2 * eps**6 / 45 * ez)
