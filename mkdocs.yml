@@ -1,0 +1,49 @@
+site_name: PulseSeek
+repo_url: https://github.com/truemerrill/pulseseek
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.sections
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.snippets
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google      # or numpy/sphinx
+            show_source: true
+            separate_signature: true
+            show_docstring_examples: true
+            filters:
+              - "!^_"
+          paths: ["."]
+          # selection:
+          #   new_path_syntax: true
+
+extra_javascript:
+  # MathJax v3 (needed by arithmatex)
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Reference:
+      - API: api.md

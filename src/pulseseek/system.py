@@ -35,12 +35,10 @@ class ControlSystem:
     ):
         """Construct a new control system
 
-        Note:
+        !!! note
             A control system is a set of Hamiltonian operators of the form
 
-            .. math::
-
-                H(u) = H_d + \\sum_i u_i H_i + \\epsilon H_e
+            $$ H(u) = H_d + \\sum_i u_i H_i + \\epsilon H_e $$
 
             where `H_d`, `H_i`, and `H_e` are the drift Hamiltonian, control
             Hamiltonians, and error Hamiltonian respectively.  The strength
@@ -49,10 +47,8 @@ class ControlSystem:
             Alternatively, it is possible to represent the control system as
             a set of vectors on a Lie algebra
 
-            .. math::
-
-               V(u) = V_d + \\sum_i u_i V_i + \\epsilon V_e
-
+            $$ V(u) = V_d + \\sum_i u_i V_i + \\epsilon V_e $$
+ 
             where `V_d`, `V_i`, and `V_e` are the images of the Hamiltonains
             represented in the Lie algebra.
 

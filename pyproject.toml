@@ -17,6 +17,12 @@ test = [
     "pytest",
     "scipy",
 ]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "mkdocs-autorefs",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

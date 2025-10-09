@@ -27,9 +27,7 @@ Baker-Campbell-Hausdorff (BCH) series
 The BCH series is a series expansion for `z = log(exp(x) exp(y))` in terms of
 x, y, and their repeated Lie brackets.  The series is given by
 
-.. math::
-
-    z = \\sum_{n > 1} Z_n(x, y)
+$$ z = \\sum_{n > 1} Z_n(x, y) $$
 
 where the index `n` runs over the expansion terms.  Although a closed form
 expression for the `Z_n(x, y)` was discovered by Dykin, this form is difficult
@@ -41,15 +39,11 @@ In `pulseseek`, we take a slightly different approach for the BCH expansion.
 First, we decompose each term into a sum of terms that are each homogeneous
 in the input parameters,
 
-.. math::
-
-    Z_n(x, y) = \\sum_{p + q = n} Z_{(p, q)}(x, y)
+$$ Z_n(x, y) = \\sum_{p + q = n} Z_{(p, q)}(x, y) $$
 
 where for all `Z_{(p, q)}`
 
-.. math::
-
-    Z_{(p, q)}(a x, b y) = a^p b^q Z_{(p, q)}(x, y).
+$$ Z_{(p, q)}(a x, b y) = a^p b^q Z_{(p, q)}(x, y). $$
 
 The advantage of this decomposition is it permits certain algebraic
 rearrangements of the expansion terms that are not possible in the standard BCH
@@ -103,19 +97,18 @@ BCH_MAX_ORDER = 15
 class BCHMonomial:
     """A single BCH bracket monomial (no sums), bihomogeneous in (x, y).
 
-    Note:
+    !!! note
         
         This object represents one nested Lie-bracket expression built from
-        p copies of x and q copies of y (e.g., [x, [x, y]]). As a multilinear
-        map in its p+q formal arguments it is linear in each slot; after
-        identifying all x-slots with the same x and all y-slots with the same y,
-        the resulting map (x, y) ↦ T(x, y) is bihomogeneous of bidegree (p, q):
+        `p` copies of `x` and `q` copies of `y` (e.g., `[x, [x, y]]`). As a
+        multilinear map in its `p + q` formal arguments it is linear in each
+        slot; after identifying all x-slots with the same x and all y-slots
+        with the same y, the resulting map `(x, y) ↦ T(x, y)` is bihomogeneous
+        of bidegree `(p, q)`:
 
-        .. math::
-
-            T(a x, b y) = a**p * b**q * T(x, y)
+        $$ T(a x, b y) = a^p b^q T(x, y) $$
         
-        for all scalars a, b.    
+        for all scalars `a`, `b`.    
     """
     order: int
     degree_x: int
@@ -504,7 +497,8 @@ def _baker_campbell_hausdorff_series_direct(
 ) -> tuple[BilinearMap, ...]:
     """Build functions for the first five terms of the BCH formula
 
-    Note:
+    !!! note
+
         This function is used for benchmarking and should not be directly used.
 
     Args:

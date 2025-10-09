@@ -10,7 +10,7 @@ from .types import Vector, is_vector
 class LiePolynomial(NamedTuple):
     """A polynomial with coefficients on the Lie algebra
 
-    Note:
+    !!! note
 
         A Lie polynomial is a polynomial of the form `Y(t) = t^n Y_n`, where
         the coefficients are members of the Lie algebra.
@@ -47,13 +47,11 @@ def lie_polynomial_adjoint_action(
 ) -> Callable[[Vector, LiePolynomial], LiePolynomial]:
     """Compute the adjoint action / toggling transformation of a polynomial
 
-    Note:
+    !!! note
         If `x` is a Lie algebra vector and `y(t)` is a Lie polynomial then
 
-        .. math::
-
-            exp(x) y(t) exp(-x) = \\sum_n t^n Ad_{exp(x)} y_n = z(t)
-
+        $$ \\exp(x) y(t) \\exp(-x) = \\sum_n t^n Ad_{\\exp(x)} y_n = z(t) $$
+        
         is the adjoint action of the polynomial.  The adjoint action of a
         polynomial is a polynomial formed from the adjoint action of each
         of the coefficients `y_n`.

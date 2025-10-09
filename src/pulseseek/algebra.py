@@ -174,22 +174,19 @@ def structure_constants(
 ) -> AntiSymmetricTensor:
     """Calculate the structure constant tensor for a Lie basis
 
-    Note:
+    !!! note
+
         The elements of the structure constant tensor are defined as
 
-        .. math::
-
-            F_{a b c} = \\langle E_a, [ E_b, E_c ] \\rangle
-
+        $$ F_{a b c} = \\langle E_a, [ E_b, E_c ] \\rangle $$
+            
         where E_a, E_b, and E_c are Lie basis elements.  Using the Einstein
         summation notation, if we expand two arbitrary elements `P`, `Q` in
         terms of the Lie basis `P = P_i E_i` and `Q = Q_j E_j`, then their
         bracket may be written as
 
-        .. math::
-
-            [P, Q] = P_i Q_i F_{k i j} E_k
-
+        $$ [P, Q] = P_i Q_i F_{k i j} E_k $$
+  
     Args:
         basis (LieBasis): the Lie basis
         inner_product (MatrixInnerProduct, optional): the inner product.
@@ -344,13 +341,12 @@ def lie_adjoint_action(
 ) -> LieBracket:
     """Construct the adjoint action of a Lie algebra
 
-    Note:
+    !!! note
+
         If `a`, `b` are Lie algebra vectors then
 
-        .. math::
-
-            exp(a) b exp(-a) = Ad_{exp(a)}(b)
-
+        $$ \\exp(a) b \\exp(-a) = Ad_{\\exp(a)}(b) $$
+  
         is the adjoint action.
 
     Args:
