@@ -76,51 +76,6 @@ def lie_polynomial_adjoint_action(
     return adjoint_action_polynomial
 
 
-"""Lie polynomial Baker-Campbell-Hausdorff (BCH) products.
-
-
-Let `x` be a Lie algebra vector and `y(t)` a Lie polynomial.  The left BCH
-product of `x` and `y(t)` is given by
-
-.. math::
-
-    w_l(t) = log(exp(t^k x) exp(y(t))).
-
-Similarly the right BCH product is
-
-.. math::
-
-    w_r(t) = log(exp(y(t) exp(t^k x))).
-
-The functions `w_r(t)` and `w_l(t)` are themselves Lie polynomials. We can see
-this from the BCH series
-
-.. math::
-
-    w_l(t) = \\sum_{n > 1} Z_n ( t^k x, y(t) ) 
-    
-           = \\sum_{n > 1} \\sum_{m > 1} Z_n ( t^k x, t^m y_m )
-
-           = \\sum_{n > 1} \\sum_{m > 1} \\sum_{p + q = n} t^{m + k} Z_{(p, q)}( x, y_m ).
-
-Then grouping terms by powers of `t`
-
-.. math::
-
-    w_l(t) = \\sum_{m > 1} t^{m + k} \\left[ \\sum_{n > 1} \\sum_{p + q = n} Z_{(p, q)}( x, y_m ) \\right].
-
-The terms in the brackets are precisely the coefficients of the polynomial
-`w_l(t)`.  Following similar arguments, we see the coefficients of both
-polynomials are
-
-.. math::
-
-    w_{l,(m + k)} = \\sum_{n > 1} \\sum_{p + q = n} Z_{(p, q)}( x, y_m )
-
-    w_{r,(m + k)} = \\sum_{n > 1} \\sum_{p + q = n} Z_{(p, q)}( y_m, x )  
-"""
-
-
 def lie_polynomial_lmult(algebra: LieAlgebra):
 
     @jax.jit
