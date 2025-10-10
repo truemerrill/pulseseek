@@ -1,10 +1,11 @@
 import numpy as np
+import jax.numpy as jnp
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from .algebra import LieAlgebra, lie_closure, InnerProduct, hilbert_schmidt_inner_product, Bracket, matrix_commutator
+from .algebra import LieAlgebra, lie_algebra, lie_closure, MatrixInnerProduct, hilbert_schmidt_inner_product, MatrixBracket, matrix_commutator
 from .basis import LieBasis
-from .types import Hermitian, AntiHermitian, is_anti_hermitian, is_hermitian, Vector, is_vector
+from .types import Hermitian, AntiHermitian, is_anti_hermitian, is_hermitian, LieVector, is_vector
 
 
 @dataclass
@@ -15,9 +16,9 @@ class ControlSystem:
     _H_error: Hermitian
 
     # Lie algebra representation
-    _E_drift: Vector | None
-    _E_controls: tuple[Vector, ...]
-    _E_error: Vector
+    _E_drift: LieVector | None
+    _E_controls: tuple[LieVector, ...]
+    _E_error: LieVector
 
     basis: LieBasis
     algebra: LieAlgebra
@@ -29,17 +30,15 @@ class ControlSystem:
         error_hamiltonian: Hermitian,
         drift_hamiltonian: Hermitian | None = None,
         basis: LieBasis | None = None,
-        inner_product: InnerProduct = hilbert_schmidt_inner_product,
-        bracket: Bracket = matrix_commutator,
+        inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
+        bracket: MatrixBracket = matrix_commutator,
     ):
         """Construct a new control system
 
-        Note:
+        !!! note
             A control system is a set of Hamiltonian operators of the form
 
-            .. math::
-
-                H(u) = H_d + \\sum_i u_i H_i + \\epsilon H_e
+            $$ H(u) = H_d + \\sum_i u_i H_i + \\epsilon H_e $$
 
             where `H_d`, `H_i`, and `H_e` are the drift Hamiltonian, control
             Hamiltonians, and error Hamiltonian respectively.  The strength
@@ -48,10 +47,8 @@ class ControlSystem:
             Alternatively, it is possible to represent the control system as
             a set of vectors on a Lie algebra
 
-            .. math::
-
-               V(u) = V_d + \\sum_i u_i V_i + \\epsilon V_e
-
+            $$ V(u) = V_d + \\sum_i u_i V_i + \\epsilon V_e $$
+ 
             where `V_d`, `V_i`, and `V_e` are the images of the Hamiltonains
             represented in the Lie algebra.
 
@@ -83,15 +80,15 @@ class ControlSystem:
             elements = {**Hd, **Hc, **He}
             basis = lie_closure(elements, bracket=bracket)
 
-        algebra = LieAlgebra.new(basis, inner_product, bracket)
+        algebra = lie_algebra(basis, inner_product, bracket)
 
-        def decomposition(x: Any) -> Vector:
+        def decomposition(x: Any) -> LieVector:
             def project(x: Any, y: AntiHermitian) -> float:
                 assert is_anti_hermitian(x)
                 return inner_product(x, y)
 
-            g = np.array([project(x, y) for y in basis.elements])
-            v = np.linalg.solve(algebra.gram_matrix, g)
+            g = jnp.array([project(x, y) for y in basis.elements])
+            v = jnp.linalg.solve(algebra.G, g)
             assert is_vector(v)
             return v
         
@@ -129,7 +126,7 @@ class ControlSystem:
         assert is_hermitian(H)
         return H
 
-    def control_lie_vector(self, control: Iterable[float]) -> Vector:
+    def control_lie_vector(self, control: Iterable[float]) -> LieVector:
         """Calculate the image of the ideal Hamiltonian in the Lie algebra
         
         Args:

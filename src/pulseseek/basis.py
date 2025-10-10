@@ -1,16 +1,18 @@
 import numpy as np
+import jax.numpy as jnp
 
 from dataclasses import dataclass
 from typing import Any, Generator, Mapping, overload
-from .types import AntiHermitian, SquareMatrix, Vector, is_anti_hermitian, is_square_matrix, is_vector
+from .types import AntiHermitian, SquareMatrix, LieVector, is_anti_hermitian, is_square_matrix, is_vector
+from .util import hash_array
 
 
 @overload
-def basis_vector(b: int, index: int) -> Vector: ...
+def basis_vector(b: int, index: int) -> LieVector: ...
 @overload
-def basis_vector(b: "LieBasis", index: int) -> Vector: ...
+def basis_vector(b: "LieBasis", index: int) -> LieVector: ...
 
-def basis_vector(b: "int | LieBasis", index: int) -> Vector:
+def basis_vector(b: "int | LieBasis", index: int) -> LieVector:
     """Construct a Lie basis vector
 
     Args:
@@ -23,6 +25,7 @@ def basis_vector(b: "int | LieBasis", index: int) -> Vector:
     dim = b.dim if isinstance(b, LieBasis) else b
     e = np.zeros((dim,), dtype=float)
     e[index] = 1.0
+    e = jnp.array(e)
     assert is_vector(e)
     return e
 
@@ -47,6 +50,13 @@ class LieBasis:
             return self._elements[key]
         else:
             raise KeyError(f"Invalid key: {key}")
+
+    def __hash__(self) -> int:
+        return hash((
+            self.ndim,
+            self._labels,
+            tuple([hash_array(el) for el in self._elements])
+        ))
 
     @classmethod
     def new(
@@ -78,7 +88,7 @@ class LieBasis:
         return self._elements
     
     @property
-    def vectors(self) -> tuple[Vector, ...]:
+    def vectors(self) -> tuple[LieVector, ...]:
         return tuple([basis_vector(self, i) for i in range(self.dim)])
     
     @property
@@ -99,7 +109,6 @@ class LieBasis:
             yield label, element
 
 
-
 def special_unitary_basis(ndim: int) -> LieBasis:
     if ndim < 2:
         raise ValueError("Dimension must be >= to 2")
@@ -107,6 +116,7 @@ def special_unitary_basis(ndim: int) -> LieBasis:
     def E(i: int, j: int) -> SquareMatrix:
         M = np.zeros((ndim, ndim), dtype=complex)
         M[i, j] = 1.0
+        M = jnp.array(M)
         assert is_square_matrix(M)
         return M
     
@@ -127,7 +137,7 @@ def special_unitary_basis(ndim: int) -> LieBasis:
         d[:k] = 1.0
         d[k] = - k
         d = d * np.sqrt(2) / np.sqrt(k * (k + 1))
-        M = 1j * np.diag(d)
+        M = 1j * jnp.diag(d)
         assert is_anti_hermitian(M)
         return M
 
