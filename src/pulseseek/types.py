@@ -21,10 +21,10 @@ def is_scalar(x: Any) -> TypeGuard[Scalar]:
     return False
 
 
-Vector = jax.Array
+LieVector = jax.Array
 
 
-def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[Vector]:
+def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[LieVector]:
     """Check if x is a vector
 
     Args:

@@ -3,16 +3,16 @@ import jax.numpy as jnp
 
 from dataclasses import dataclass
 from typing import Any, Generator, Mapping, overload
-from .types import AntiHermitian, SquareMatrix, Vector, is_anti_hermitian, is_square_matrix, is_vector
+from .types import AntiHermitian, SquareMatrix, LieVector, is_anti_hermitian, is_square_matrix, is_vector
 from .util import hash_array
 
 
 @overload
-def basis_vector(b: int, index: int) -> Vector: ...
+def basis_vector(b: int, index: int) -> LieVector: ...
 @overload
-def basis_vector(b: "LieBasis", index: int) -> Vector: ...
+def basis_vector(b: "LieBasis", index: int) -> LieVector: ...
 
-def basis_vector(b: "int | LieBasis", index: int) -> Vector:
+def basis_vector(b: "int | LieBasis", index: int) -> LieVector:
     """Construct a Lie basis vector
 
     Args:
@@ -88,7 +88,7 @@ class LieBasis:
         return self._elements
     
     @property
-    def vectors(self) -> tuple[Vector, ...]:
+    def vectors(self) -> tuple[LieVector, ...]:
         return tuple([basis_vector(self, i) for i in range(self.dim)])
     
     @property

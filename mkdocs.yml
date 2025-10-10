@@ -45,5 +45,6 @@ extra_javascript:
 
 nav:
   - Home: index.md
+  - Theory: theory.md
   - Reference:
       - API: api.md

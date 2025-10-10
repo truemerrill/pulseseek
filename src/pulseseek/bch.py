@@ -18,7 +18,7 @@ import jax
 from jax import numpy as jnp
 
 from .algebra import LieBracket, LieAlgebra, lie_bracket
-from .types import Vector, Matrix
+from .types import LieVector, Matrix
 
 
 """
@@ -60,10 +60,10 @@ produces a sequence set of `Z_{(p, q)}` functions.  Each `Z_{(p, q)}` function
 is `jax.jit` compiled for efficiency and speed.
 """
 
-BilinearMap = Callable[[Vector, Vector], Vector]
+BilinearMap = Callable[[LieVector, LieVector], LieVector]
 """A bilinear mapping between Lie algebra vectors."""
 
-BCHTerms = tuple[Vector, ...]
+BCHTerms = tuple[LieVector, ...]
 """
 Terms of the BCH expansion. The cumulative sum converges to 
 `log(exp(t x) exp(t y))` when `t` is small.
@@ -83,7 +83,7 @@ lifting of a sequence of Lie vectors `x_1`, `x_2`, ... `x_p` is the
 column-stacked matrix `[x_1, x_2, ..., x_p]`.
 """
 
-BCHLiftingMap = Callable[[BCHLifting, BCHLifting], Vector]
+BCHLiftingMap = Callable[[BCHLifting, BCHLifting], LieVector]
 """A bilinear mapping operating on the multilinear lifting of a BCH term."""
 
 BCHLiftingSeries = tuple[BCHLiftingMap, ...]
@@ -201,7 +201,7 @@ def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
     def compile_x(op: BCHOperation) -> BilinearMap:
         assert op.flag == "X"
 
-        def x(x: Vector, _: Vector) -> Vector:
+        def x(x: LieVector, _: LieVector) -> LieVector:
             return x
 
         return x
@@ -209,7 +209,7 @@ def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
     def compile_y(op: BCHOperation) -> BilinearMap:
         assert op.flag == "Y"
 
-        def y(_: Vector, y: Vector) -> Vector:
+        def y(_: LieVector, y: LieVector) -> LieVector:
             return y
 
         return y
@@ -219,7 +219,7 @@ def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
     ) -> BilinearMap:
         assert op.flag == "BR"
 
-        def br(x: Vector, y: Vector) -> Vector:
+        def br(x: LieVector, y: LieVector) -> LieVector:
             return bracket(left(x, y), right(x, y))
 
         return br
@@ -236,7 +236,7 @@ def _bch_lifting_primitives(
         assert op.flag == "X" and op.index is not None
         index = op.index
 
-        def x(x: BCHLifting, y: BCHLifting) -> Vector:
+        def x(x: BCHLifting, y: BCHLifting) -> LieVector:
             xi = x[:, index]
             return xi
 
@@ -246,7 +246,7 @@ def _bch_lifting_primitives(
         assert op.flag == "Y" and op.index is not None
         index = op.index
 
-        def y(_: BCHLifting, y: BCHLifting) -> Vector:
+        def y(_: BCHLifting, y: BCHLifting) -> LieVector:
             yi = y[:, index]
             return yi
 
@@ -257,7 +257,7 @@ def _bch_lifting_primitives(
     ) -> BCHLiftingMap:
         assert op.flag == "BR" and op.index is None
 
-        def br(x: BCHLifting, y: BCHLifting) -> Vector:
+        def br(x: BCHLifting, y: BCHLifting) -> LieVector:
             return bracket(left(x, y), right(x, y))
 
         return br
@@ -435,7 +435,7 @@ def baker_campbell_hausdorff_series(
                 terms.append(Z[pq])
 
         @jax.jit
-        def fn(x: Vector, y: Vector) -> Vector:
+        def fn(x: LieVector, y: LieVector) -> LieVector:
             z = 0 * x
             for z_pq in terms:
                 z += z_pq(x, y)
@@ -450,7 +450,7 @@ def baker_campbell_hausdorff_series(
                 terms.append(Z[pq])
 
         @jax.jit
-        def fn(x: BCHLifting, y: BCHLifting) -> Vector:
+        def fn(x: BCHLifting, y: BCHLifting) -> LieVector:
             z = 0 * x[:, 0]
             for z_pq in terms:
                 z += z_pq(x, y)
@@ -466,7 +466,7 @@ def baker_campbell_hausdorff_series(
 
 def baker_campbell_hausdorff(
     algebra: LieAlgebra, order: int = 8
-) -> Callable[[Vector, Vector], BCHTerms]:
+) -> Callable[[LieVector, LieVector], BCHTerms]:
     """Generate a function that computes the Baker-Campbell-Hausdorff series.
 
     Args:
@@ -486,7 +486,7 @@ def baker_campbell_hausdorff(
         raise ValueError("order is greater than the maximum series order")
 
     @jax.jit
-    def bch(x: Vector, y: Vector) -> BCHTerms:
+    def bch(x: LieVector, y: LieVector) -> BCHTerms:
         return tuple(Zm(x, y) for Zm in series[0:order])
 
     return bch
@@ -509,23 +509,23 @@ def _baker_campbell_hausdorff_series_direct(
     """
 
     @jax.jit
-    def bch_1(x: Vector, y: Vector) -> Vector:
+    def bch_1(x: LieVector, y: LieVector) -> LieVector:
         return x + y
 
     @jax.jit
-    def bch_2(x: Vector, y: Vector) -> Vector:
+    def bch_2(x: LieVector, y: LieVector) -> LieVector:
         return 1.0 / 2 * bracket(x, y)
 
     @jax.jit
-    def bch_3(x: Vector, y: Vector) -> Vector:
+    def bch_3(x: LieVector, y: LieVector) -> LieVector:
         return 1.0 / 12 * (bracket(x, bracket(x, y)) + bracket(y, bracket(y, x)))
 
     @jax.jit
-    def bch_4(x: Vector, y: Vector) -> Vector:
+    def bch_4(x: LieVector, y: LieVector) -> LieVector:
         return -1.0 / 24 * (bracket(y, bracket(x, bracket(x, y))))
 
     @jax.jit
-    def bch_5(x: Vector, y: Vector) -> Vector:
+    def bch_5(x: LieVector, y: LieVector) -> LieVector:
         return (
             -1.0
             / 720

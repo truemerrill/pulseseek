@@ -4,7 +4,7 @@ import functools
 
 from typing import Callable, NamedTuple
 from .algebra import LieAlgebra, lie_adjoint_action
-from .types import Vector, is_vector
+from .types import LieVector, is_vector
 
 
 class LiePolynomial(NamedTuple):
@@ -12,13 +12,14 @@ class LiePolynomial(NamedTuple):
 
     !!! note
 
-        A Lie polynomial is a polynomial of the form `Y(t) = t^n Y_n`, where
-        the coefficients are members of the Lie algebra.
+        A Lie polynomial is a polynomial of the form 
+        \\( Y(t) = \\sum_{n > 0} t^n Y_n \\), where the coefficients `Y_n` are
+        members of the Lie algebra.
     """
 
-    coeffs: tuple[Vector, ...]
+    coeffs: tuple[LieVector, ...]
 
-    def evaluate(self, t: float) -> Vector:
+    def evaluate(self, t: float) -> LieVector:
         """Evaluate the polynomial using a Horner scheme
 
         Args:
@@ -37,14 +38,14 @@ class LiePolynomial(NamedTuple):
             z = zn + t * z
         return t * z
 
-    def __call__(self, t: float) -> Vector:
+    def __call__(self, t: float) -> LieVector:
         return self.evaluate(t)
 
 
 @functools.cache
 def lie_polynomial_adjoint_action(
     algebra: LieAlgebra, atol: float = 1e-12, max_terms: int = 1000
-) -> Callable[[Vector, LiePolynomial], LiePolynomial]:
+) -> Callable[[LieVector, LiePolynomial], LiePolynomial]:
     """Compute the adjoint action / toggling transformation of a polynomial
 
     !!! note
@@ -68,7 +69,7 @@ def lie_polynomial_adjoint_action(
     ad = lie_adjoint_action(algebra, atol=atol, max_terms=max_terms)
 
     @jax.jit
-    def adjoint_action_polynomial(x: Vector, y: LiePolynomial) -> LiePolynomial:
+    def adjoint_action_polynomial(x: LieVector, y: LiePolynomial) -> LiePolynomial:
         coeffs = tuple(ad(x, c) for c in y.coeffs)
         return LiePolynomial(coeffs)
     
@@ -123,7 +124,7 @@ polynomials are
 def lie_polynomial_lmult(algebra: LieAlgebra):
 
     @jax.jit
-    def lmult(x: Vector, y: LiePolynomial) -> LiePolynomial:
+    def lmult(x: LieVector, y: LiePolynomial) -> LiePolynomial:
         ...
 
     return lmult
@@ -132,7 +133,7 @@ def lie_polynomial_lmult(algebra: LieAlgebra):
 def lie_polynomial_rmult(algebra: LieAlgebra):
 
     @jax.jit
-    def rmult(y: LiePolynomial, z: Vector) -> LiePolynomial:
+    def rmult(y: LiePolynomial, z: LieVector) -> LiePolynomial:
         ...
     
     return rmult

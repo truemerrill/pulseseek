@@ -5,7 +5,7 @@ from typing import Any, Iterable
 
 from .algebra import LieAlgebra, lie_algebra, lie_closure, MatrixInnerProduct, hilbert_schmidt_inner_product, MatrixBracket, matrix_commutator
 from .basis import LieBasis
-from .types import Hermitian, AntiHermitian, is_anti_hermitian, is_hermitian, Vector, is_vector
+from .types import Hermitian, AntiHermitian, is_anti_hermitian, is_hermitian, LieVector, is_vector
 
 
 @dataclass
@@ -16,9 +16,9 @@ class ControlSystem:
     _H_error: Hermitian
 
     # Lie algebra representation
-    _E_drift: Vector | None
-    _E_controls: tuple[Vector, ...]
-    _E_error: Vector
+    _E_drift: LieVector | None
+    _E_controls: tuple[LieVector, ...]
+    _E_error: LieVector
 
     basis: LieBasis
     algebra: LieAlgebra
@@ -82,7 +82,7 @@ class ControlSystem:
 
         algebra = lie_algebra(basis, inner_product, bracket)
 
-        def decomposition(x: Any) -> Vector:
+        def decomposition(x: Any) -> LieVector:
             def project(x: Any, y: AntiHermitian) -> float:
                 assert is_anti_hermitian(x)
                 return inner_product(x, y)
@@ -126,7 +126,7 @@ class ControlSystem:
         assert is_hermitian(H)
         return H
 
-    def control_lie_vector(self, control: Iterable[float]) -> Vector:
+    def control_lie_vector(self, control: Iterable[float]) -> LieVector:
         """Calculate the image of the ideal Hamiltonian in the Lie algebra
         
         Args:

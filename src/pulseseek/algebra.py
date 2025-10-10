@@ -20,7 +20,7 @@ from .types import (
     Hermitian,
     Scalar,
     SquareMatrix,
-    Vector,
+    LieVector,
     is_antisymmetric_tensor,
     is_hermitian,
     is_square_matrix,
@@ -215,11 +215,11 @@ def structure_constants(
 
 # --- Lie algebra representation ----------------------------------------------
 
-LieInnerProduct = Callable[[Vector, Vector], Scalar]
-LieBracket = Callable[[Vector, Vector], Vector]
-LieProjection = Callable[[AntiHermitian], Vector]
-LieExponential = Callable[[Vector], SquareMatrix]
-LieLogarithm = Callable[[SquareMatrix], Vector]
+LieInnerProduct = Callable[[LieVector, LieVector], Scalar]
+LieBracket = Callable[[LieVector, LieVector], LieVector]
+LieProjection = Callable[[AntiHermitian], LieVector]
+LieExponential = Callable[[LieVector], SquareMatrix]
+LieLogarithm = Callable[[SquareMatrix], LieVector]
 
 
 class LieAlgebra(NamedTuple):
@@ -269,7 +269,7 @@ def lie_projection(
     assert is_square_matrix(Ginv)
 
     @jax.jit
-    def project(matrix: AntiHermitian) -> Vector:
+    def project(matrix: AntiHermitian) -> LieVector:
         h = jnp.array([inner_product(matrix, E) for E in algebra.basis.elements])
         r = Ginv @ h
         return r
@@ -282,7 +282,7 @@ def lie_exponential(algebra: LieAlgebra) -> LieExponential:
     E = jnp.array(algebra.basis.elements)
 
     @jax.jit
-    def exp(x: Vector) -> SquareMatrix:
+    def exp(x: LieVector) -> SquareMatrix:
         X = jnp.einsum("i,ijk->jk", x, E)
         return jax.scipy.linalg.expm(X)
 
@@ -302,7 +302,7 @@ def lie_inner_product(algebra: LieAlgebra) -> LieInnerProduct:
     G = algebra.G
 
     @jax.jit
-    def inner_product(x: Vector, y: Vector) -> Scalar:
+    def inner_product(x: LieVector, y: LieVector) -> Scalar:
         ip = x @ G @ y
         return ip
 
@@ -322,7 +322,7 @@ def lie_bracket(algebra: LieAlgebra) -> LieBracket:
     F = algebra.F
 
     @jax.jit
-    def bracket(x: Vector, y: Vector) -> Vector:
+    def bracket(x: LieVector, y: LieVector) -> LieVector:
         z = jnp.einsum("kij,i,j->k", F, x, y, optimize=True)
         return z
 
@@ -330,8 +330,8 @@ def lie_bracket(algebra: LieAlgebra) -> LieBracket:
 
 
 class LieAdjointCarry(NamedTuple):
-    result: Vector
-    term: Vector
+    result: LieVector
+    term: LieVector
     n: jax.Array
 
 
@@ -362,7 +362,7 @@ def lie_adjoint_action(
     bracket = lie_bracket(algebra)
 
     @jax.jit
-    def adjoint_action_horner(x: Vector, y: Vector) -> Vector:
+    def adjoint_action_horner(x: LieVector, y: LieVector) -> LieVector:
         """Computes the Taylor series of Ad_{exp(x)} y using Horner's method.
 
         Args:

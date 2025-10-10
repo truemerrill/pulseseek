@@ -5,13 +5,13 @@ import functools
 
 from .algebra import LieAlgebra, lie_bracket, lie_projection, MatrixInnerProduct, hilbert_schmidt_inner_product
 from .bch import BilinearMap, baker_campbell_hausdorff_series
-from .types import Vector
+from .types import LieVector
 
 
 
 class BCHScalingCarry(NamedTuple):
-    x: Vector
-    y: Vector
+    x: LieVector
+    y: LieVector
     scale: float
 
 
@@ -28,7 +28,7 @@ def lie_product_baker_campbell_hausdorff(
     z_tail = series[order]
 
     @jax.jit
-    def bch_scaling(x: Vector, y: Vector) -> float:
+    def bch_scaling(x: LieVector, y: LieVector) -> float:
         """Find scaling factor so that the truncation error is less than atol
 
         Args:
@@ -56,11 +56,11 @@ def lie_product_baker_campbell_hausdorff(
         return final.scale
 
     @jax.jit
-    def product(x: Vector, y: Vector) -> Vector:
+    def product(x: LieVector, y: LieVector) -> LieVector:
         scale = bch_scaling(x, y)
         xa = x / scale
         ya = y / scale
         terms = tuple(scale * Zm(xa, ya) for Zm in series[0:order])
-        return cast(Vector, sum(terms))
+        return cast(LieVector, sum(terms))
 
     return product
