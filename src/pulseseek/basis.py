@@ -64,15 +64,14 @@ class LieBasis:
         elements: Mapping[str, Any],
         *,
         dimension: int | None = None,
-        atol: float = 1e-12,
     ):
         matrices: list[AntiHermitian] = []
         for mat in elements.values():
             if dimension is None:
                 dimension = mat.shape[0]
-            if not is_anti_hermitian(mat, dimension=dimension, atol=atol):
+            if not is_square_matrix(mat, dimension=dimension):
                 raise ValueError(
-                    f"Not an anti-Hermitian matrix of dimension {dimension}: {mat}"
+                    f"Not a square matrix of dimension {dimension}: {mat}"
                 )
             matrices.append(mat)
             
@@ -155,3 +154,37 @@ def special_unitary_basis(ndim: int) -> LieBasis:
         elements[h_label] = H(k)
 
     return LieBasis.new(elements, dimension=ndim)
+
+
+def fock_basis(ndim: int = 15) -> LieBasis:
+    """Heisenburg algebra using a truncated Fock state representation.
+
+    Args:
+        ndim (int, optional): Dimension of the truncated Fock state. Defaults
+            to 15.
+
+    Returns:
+        LieBasis: the Lie basis for the Heisenburg
+    """
+
+    def annihilation() -> SquareMatrix:
+        a = np.zeros((ndim, ndim))
+        for n in range(1, ndim):
+            a[n - 1, n] = np.sqrt(n)
+        A = jnp.array(a)
+        assert is_square_matrix(A)
+        return A
+    
+    def identity() -> SquareMatrix:
+        I = jnp.array(np.eye(ndim))
+        assert is_square_matrix(I)
+        return I
+
+    A = annihilation()
+    I = identity()
+    elements = {
+        "a": A,
+        "a†": A.T.conj(),
+        "I": I
+    }
+    return LieBasis.new(elements)

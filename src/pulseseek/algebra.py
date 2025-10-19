@@ -5,15 +5,17 @@ from typing import (
     Generator,
     Hashable,
     Iterable,
+    Literal,
     Mapping,
     NamedTuple,
+    overload
 )
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .basis import LieBasis
+from .basis import LieBasis, fock_basis, special_unitary_basis
 from .types import (
     AntiHermitian,
     AntiSymmetricTensor,
@@ -33,12 +35,12 @@ jax.config.update("jax_enable_x64", True)
 
 # --- Matrix representation ---------------------------------------------------
 
-MatrixInnerProduct = Callable[[AntiHermitian, AntiHermitian], Scalar]
-MatrixBracket = Callable[[AntiHermitian, AntiHermitian], AntiHermitian]
+MatrixInnerProduct = Callable[[SquareMatrix, SquareMatrix], Scalar]
+MatrixBracket = Callable[[SquareMatrix, SquareMatrix], SquareMatrix]
 
 
-def hilbert_schmidt_inner_product(X: AntiHermitian, Y: AntiHermitian) -> Scalar:
-    return -jnp.real(jnp.trace(X @ Y))
+def hilbert_schmidt_inner_product(X: SquareMatrix, Y: SquareMatrix) -> Scalar:
+    return jnp.trace(X.T.conj() @ Y)
 
 
 def matrix_commutator(X: SquareMatrix, Y: SquareMatrix) -> SquareMatrix:
@@ -59,7 +61,7 @@ def lie_closure(
     Args:
         elements (Mapping[str, Any]): the elements to span.  The keys should be
             the names of the elements and the values should be the elements
-            themselves.  The elements must be anti-Hermitian.
+            themselves.  The elements must be square matrices.
         bracket (MatrixBracket, optional): the Lie bracket. Defaults to
             matrix_commutator.
         name_element (NameElement, optional): A callback function that is used
@@ -76,7 +78,7 @@ def lie_closure(
         LieBasis: the spanning basis
     """
 
-    def in_span(x: AntiHermitian, vectors: Iterable[AntiHermitian], atol=1e-12) -> bool:
+    def in_span(x: SquareMatrix, vectors: Iterable[SquareMatrix], atol=1e-12) -> bool:
         """Check if x is in the span of vectors."""
         vecs = tuple(vectors)
         if len(vecs) == 0:
@@ -90,8 +92,8 @@ def lie_closure(
         return rank_V == rank_aug
 
     def brackets(
-        vectors: Iterable[AntiHermitian],
-    ) -> Generator[AntiHermitian, None, None]:
+        vectors: Iterable[SquareMatrix],
+    ) -> Generator[SquareMatrix, None, None]:
         """Iterate over Lie brackets."""
         for a, x in enumerate(vectors):
             for b, y in enumerate(vectors):
@@ -99,8 +101,8 @@ def lie_closure(
                     yield bracket(x, y)
 
     def new_elements(
-        vectors: Iterable[AntiHermitian], max_rank: int
-    ) -> dict[str, AntiHermitian]:
+        vectors: Iterable[SquareMatrix], max_rank: int
+    ) -> dict[str, SquareMatrix]:
         """Generate new elements in one round of repeated Lie brackets."""
         v = list(vectors)
         elements: dict[str, AntiHermitian] = {}
@@ -120,10 +122,10 @@ def lie_closure(
         return elements
 
     def linearly_independent_elements(
-        elements: Mapping[str, AntiHermitian],
-    ) -> dict[str, AntiHermitian]:
+        elements: Mapping[str, SquareMatrix],
+    ) -> dict[str, SquareMatrix]:
         """Select the linearly independent elements."""
-        independent: dict[str, AntiHermitian] = {}
+        independent: dict[str, SquareMatrix] = {}
         for name, E in elements.items():
             if not in_span(E, independent.values()):
                 independent[name] = E
@@ -179,14 +181,14 @@ def structure_constants(
         The elements of the structure constant tensor are defined as
 
         $$ F_{a b c} = \\langle E_a, [ E_b, E_c ] \\rangle $$
-            
+
         where E_a, E_b, and E_c are Lie basis elements.  Using the Einstein
         summation notation, if we expand two arbitrary elements `P`, `Q` in
         terms of the Lie basis `P = P_i E_i` and `Q = Q_j E_j`, then their
         bracket may be written as
 
         $$ [P, Q] = P_i Q_i F_{k i j} E_k $$
-  
+
     Args:
         basis (LieBasis): the Lie basis
         inner_product (MatrixInnerProduct, optional): the inner product.
@@ -217,7 +219,7 @@ def structure_constants(
 
 LieInnerProduct = Callable[[LieVector, LieVector], Scalar]
 LieBracket = Callable[[LieVector, LieVector], LieVector]
-LieProjection = Callable[[AntiHermitian], LieVector]
+LieProjection = Callable[[SquareMatrix], LieVector]
 LieExponential = Callable[[LieVector], SquareMatrix]
 LieLogarithm = Callable[[SquareMatrix], LieVector]
 
@@ -238,7 +240,38 @@ class LieAlgebra(NamedTuple):
         return self.G.shape[0]
 
 
-def lie_algebra(
+def _lie_algebra_explicit_su2() -> LieAlgebra:
+    return _lie_algebra_implicit(special_unitary_basis(2))
+
+
+def _lie_algebra_explicit_heisenberg_fock(ndim: int = 15) -> LieAlgebra:
+    basis = fock_basis(ndim=ndim)
+    tr_n = sum([n for n in range(ndim)])
+    G = jax.array([[tr_n, 0, 0], [0, tr_n, 0], [0, 0, ndim]])
+    F = jax.array(
+        [
+            [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+            [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+            [[0, 1, 0], [-1, 0, 0], [0, 0, 0]],
+        ]
+    )
+    return LieAlgebra(basis, G, F)
+
+
+def _lie_algebra_explicit(
+    name: Literal["su2", "heisenberg-fock"], *, args: dict[str, Any] = {}
+) -> LieAlgebra:
+    if name == "su2":
+        return _lie_algebra_explicit_su2()
+    elif name == "heisenberg-fock":
+        return (
+            _lie_algebra_explicit_heisenberg_fock(ndim=args["ndim"])
+            if "ndim" in args
+            else _lie_algebra_explicit_heisenberg_fock()
+        )
+
+
+def _lie_algebra_implicit(
     basis: LieBasis,
     inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
     bracket: MatrixBracket = matrix_commutator,
@@ -258,6 +291,22 @@ def lie_algebra(
     G = gram_matrix(basis, inner_product)
     F = structure_constants(basis, inner_product, bracket)
     return LieAlgebra(basis, G, F)
+
+
+@overload
+def lie_algebra(
+    basis: LieBasis,
+    inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
+    bracket: MatrixBracket = matrix_commutator
+) -> LieAlgebra: ...
+
+@overload
+def lie_algebra(
+    name: Literal["su2", "heisenberg-fock"],
+) -> LieAlgebra: ...
+
+def lie_algebra(basis_or_name: LieBasis | Literal["su2", "heisenberg-fock"]
+                )
 
 
 @functools.cache
@@ -346,7 +395,7 @@ def lie_adjoint_action(
         If `a`, `b` are Lie algebra vectors then
 
         $$ \\exp(a) b \\exp(-a) = Ad_{\\exp(a)}(b) $$
-  
+
         is the adjoint action.
 
     Args:
