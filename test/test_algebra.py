@@ -23,8 +23,20 @@ def test_algebra_explicit_su2():
     assert g1 == g2
 
 
+def test_algebra_explicit_heisenberg():
+    g = lie_algebra("heisenberg")
+
+    bracket = lie_bracket(g)
+    e1, e2, e3 = g.basis.vectors
+
+    assert np.isclose(bracket(e1, e2), e3).all()
+    assert np.isclose(bracket(e2, e1), - e3).all()
+    assert np.isclose(bracket(e1, e3), 0 * e1).all()
+    assert np.isclose(bracket(e2, e3), 0 * e1).all()
+
+
 def test_algebra_explicit_heisenberg_fock():
-    g = lie_algebra("heisengberg-fock", ndim=5)
+    g = lie_algebra("heisenberg-fock", ndim=5)
     a, ad, identity = g.basis.elements
     rank = len(g.basis.elements)
 

@@ -25,9 +25,9 @@ def basis_vector(b: "int | LieBasis", index: int) -> LieVector:
     dim = b.dim if isinstance(b, LieBasis) else b
     e = np.zeros((dim,), dtype=float)
     e[index] = 1.0
-    e = jnp.array(e)
-    assert is_vector(e)
-    return e
+    ev = jnp.array(e)
+    assert is_vector(ev)
+    return ev
 
 
 @dataclass(frozen=True)
@@ -115,9 +115,9 @@ def special_unitary_basis(ndim: int) -> LieBasis:
     def E(i: int, j: int) -> SquareMatrix:
         M = np.zeros((ndim, ndim), dtype=complex)
         M[i, j] = 1.0
-        M = jnp.array(M)
-        assert is_square_matrix(M)
-        return M
+        Ma = jnp.array(M)
+        assert is_square_matrix(Ma)
+        return Ma
     
     def S(i: int, j: int) -> AntiHermitian:
         M = 1j * (E(i, j) + E(j, i))
@@ -156,6 +156,27 @@ def special_unitary_basis(ndim: int) -> LieBasis:
     return LieBasis.new(elements, dimension=ndim)
 
 
+def heisenburg_basis() -> LieBasis:
+    """Heisenburg algebra using traditional basis.
+
+    !!! note:
+
+        See the Wikipedia page on the [Heisenburg algebra](https://en.wikipedia.org/wiki/Heisenberg_group#Heisenberg_algebra)
+
+    Returns:
+        LieBasis: the Lie basis for the Heisenburg algebra
+    """
+    X = jnp.array([[0, 1, 0], [0, 0, 0], [0, 0, 0]])
+    Y = jnp.array([[0, 0, 0], [0, 0, 1], [0, 0, 0]])
+    Z = jnp.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]])
+    elements = {
+        "X": X,
+        "Y": Y,
+        "Z": Z
+    }
+    return LieBasis.new(elements)
+
+
 def fock_basis(ndim: int = 15) -> LieBasis:
     """Heisenburg algebra using a truncated Fock state representation.
 
@@ -164,7 +185,7 @@ def fock_basis(ndim: int = 15) -> LieBasis:
             to 15.
 
     Returns:
-        LieBasis: the Lie basis for the Heisenburg
+        LieBasis: the Lie basis for the Heisenburg algebra
     """
 
     def annihilation() -> SquareMatrix:

@@ -8,7 +8,6 @@ from typing import (
     Literal,
     Mapping,
     NamedTuple,
-    TypedDict,
     overload
 )
 
@@ -16,7 +15,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .basis import LieBasis, fock_basis, special_unitary_basis
+from .basis import LieBasis, fock_basis, heisenburg_basis, special_unitary_basis
 from .types import (
     AntiHermitian,
     AntiSymmetricTensor,
@@ -165,9 +164,9 @@ def gram_matrix(
             A = basis[a]
             B = basis[b]
             G[a, b] = inner_product(A, B)
-    G = jnp.array(G)
-    assert is_hermitian(G, dimension=m)
-    return G
+    Gr = jnp.array(G)
+    assert is_hermitian(Gr, dimension=m)
+    return Gr
 
 
 def structure_constants(
@@ -245,6 +244,10 @@ def _lie_algebra_explicit_su2() -> LieAlgebra:
     return _lie_algebra_implicit(special_unitary_basis(2))
 
 
+def _lie_algebra_explicit_heisenberg() -> LieAlgebra:
+    return _lie_algebra_implicit(heisenburg_basis())
+
+
 def _lie_algebra_explicit_heisenberg_fock(ndim: int = 15) -> LieAlgebra:
     basis = fock_basis(ndim=ndim)
     m = ndim * (ndim - 1) / 2
@@ -297,7 +300,12 @@ def lie_algebra(
 
 @overload
 def lie_algebra(
-    basis: Literal["heisengberg-fock"],
+    basis: Literal["heisenberg"]
+) -> LieAlgebra: ...
+
+@overload
+def lie_algebra(
+    basis: Literal["heisenberg-fock"],
     *,
     ndim: int = 15
 ) -> LieAlgebra: ...
@@ -311,7 +319,9 @@ def lie_algebra(
     else:
         if basis == "su2":
             return _lie_algebra_explicit_su2()
-        elif basis == "heisengberg-fock":
+        elif basis == "heisenberg":
+            return _lie_algebra_explicit_heisenberg()
+        elif basis == "heisenberg-fock":
             return _lie_algebra_explicit_heisenberg_fock(**kwargs)
         raise ValueError(f"Unknown Lie algebra: {str(basis)}")
 
