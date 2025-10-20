@@ -159,7 +159,7 @@ def special_unitary_basis(ndim: int) -> LieBasis:
 def heisenburg_basis() -> LieBasis:
     """Heisenburg algebra using traditional basis.
 
-    !!! note:
+    !!! note
 
         See the Wikipedia page on the [Heisenburg algebra](https://en.wikipedia.org/wiki/Heisenberg_group#Heisenberg_algebra)
 
