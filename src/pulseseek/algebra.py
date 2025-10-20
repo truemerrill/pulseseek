@@ -8,6 +8,7 @@ from typing import (
     Literal,
     Mapping,
     NamedTuple,
+    TypedDict,
     overload
 )
 
@@ -158,7 +159,7 @@ def gram_matrix(
         Hermitian: the Gram matrix
     """
     m = basis.dim
-    G = np.zeros((m, m), dtype=float)
+    G = np.zeros((m, m), dtype=complex)
     for a in range(m):
         for b in range(m):
             A = basis[a]
@@ -200,7 +201,7 @@ def structure_constants(
         AntiSymmetricTensor: the structure constant tensor
     """
     m = basis.dim
-    S = np.zeros((m, m, m), dtype=float)
+    S = np.zeros((m, m, m), dtype=complex)
     G = gram_matrix(basis, inner_product)
     Ginv = jnp.linalg.inv(G)
 
@@ -246,9 +247,9 @@ def _lie_algebra_explicit_su2() -> LieAlgebra:
 
 def _lie_algebra_explicit_heisenberg_fock(ndim: int = 15) -> LieAlgebra:
     basis = fock_basis(ndim=ndim)
-    tr_n = sum([n for n in range(ndim)])
-    G = jax.array([[tr_n, 0, 0], [0, tr_n, 0], [0, 0, ndim]])
-    F = jax.array(
+    m = ndim * (ndim - 1) / 2
+    G = jnp.array([[m, 0, 0], [0, m, 0], [0, 0, ndim]])
+    F = jnp.array(
         [
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
             [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
@@ -258,21 +259,9 @@ def _lie_algebra_explicit_heisenberg_fock(ndim: int = 15) -> LieAlgebra:
     return LieAlgebra(basis, G, F)
 
 
-def _lie_algebra_explicit(
-    name: Literal["su2", "heisenberg-fock"], *, args: dict[str, Any] = {}
-) -> LieAlgebra:
-    if name == "su2":
-        return _lie_algebra_explicit_su2()
-    elif name == "heisenberg-fock":
-        return (
-            _lie_algebra_explicit_heisenberg_fock(ndim=args["ndim"])
-            if "ndim" in args
-            else _lie_algebra_explicit_heisenberg_fock()
-        )
-
-
 def _lie_algebra_implicit(
     basis: LieBasis,
+    *,
     inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
     bracket: MatrixBracket = matrix_commutator,
 ) -> LieAlgebra:
@@ -286,7 +275,7 @@ def _lie_algebra_implicit(
             matrix_commutator.
 
     Returns:
-        LieAlgebra: _description_
+        LieAlgebra: the Lie algebra
     """
     G = gram_matrix(basis, inner_product)
     F = structure_constants(basis, inner_product, bracket)
@@ -296,17 +285,35 @@ def _lie_algebra_implicit(
 @overload
 def lie_algebra(
     basis: LieBasis,
+    *,
     inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
-    bracket: MatrixBracket = matrix_commutator
+    bracket:MatrixBracket = matrix_commutator
 ) -> LieAlgebra: ...
 
 @overload
 def lie_algebra(
-    name: Literal["su2", "heisenberg-fock"],
+    basis: Literal["su2"],
 ) -> LieAlgebra: ...
 
-def lie_algebra(basis_or_name: LieBasis | Literal["su2", "heisenberg-fock"]
-                )
+@overload
+def lie_algebra(
+    basis: Literal["heisengberg-fock"],
+    *,
+    ndim: int = 15
+) -> LieAlgebra: ...
+
+def lie_algebra(
+    basis,
+    **kwargs
+) -> LieAlgebra:
+    if isinstance(basis, LieBasis):
+        return _lie_algebra_implicit(basis, **kwargs)
+    else:
+        if basis == "su2":
+            return _lie_algebra_explicit_su2()
+        elif basis == "heisengberg-fock":
+            return _lie_algebra_explicit_heisenberg_fock(**kwargs)
+        raise ValueError(f"Unknown Lie algebra: {str(basis)}")
 
 
 @functools.cache
