@@ -1,6 +1,6 @@
 import numpy as np
 import jax.numpy as jnp
-from pulseseek.basis import LieBasis, special_unitary_basis
+from pulseseek.basis import LieBasis, special_unitary_basis, fock_basis
 from pulseseek.algebra import gram_matrix, structure_constants
 
 
@@ -70,3 +70,13 @@ def test_su2_non_orthanormal_structure_constants():
 
     F = structure_constants(su2)
     assert F[0, 1, 2] == - 4.0
+
+
+def test_fock_basis():
+    ndim = 5
+    basis = fock_basis(ndim=ndim)
+    a, ad, identity = basis.elements
+    N = np.diag(range(ndim))
+    
+    assert np.isclose(ad @ a, N).all()
+    assert np.trace(identity) == ndim

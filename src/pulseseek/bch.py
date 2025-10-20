@@ -370,7 +370,7 @@ def baker_campbell_hausdorff_compile(
     bracket: LieBracket,
     max_order: int = BCH_MAX_ORDER,
     mode: Literal["standard", "lifting"] = "standard",
-) -> dict[tuple[int, int], T]:
+) -> dict[tuple[int, int], BilinearMap | BCHLiftingMap]:
     """Compile BCH Z_{(p, q)} functions using the Lie bracket
 
     Args:

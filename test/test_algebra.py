@@ -17,6 +17,44 @@ from pulseseek.algebra import (
     lie_adjoint_action)
 
 
+def test_algebra_explicit_su2():
+    g1 = lie_algebra("su2")
+    g2 = lie_algebra(special_unitary_basis(2))
+    assert g1 == g2
+
+
+def test_algebra_explicit_heisenberg():
+    g = lie_algebra("heisenberg")
+
+    bracket = lie_bracket(g)
+    e1, e2, e3 = g.basis.vectors
+
+    assert np.isclose(bracket(e1, e2), e3).all()
+    assert np.isclose(bracket(e2, e1), - e3).all()
+    assert np.isclose(bracket(e1, e3), 0 * e1).all()
+    assert np.isclose(bracket(e2, e3), 0 * e1).all()
+
+
+def test_algebra_explicit_heisenberg_fock():
+    g = lie_algebra("heisenberg-fock", ndim=5)
+    a, ad, identity = g.basis.elements
+    rank = len(g.basis.elements)
+
+    assert rank == 3
+    assert a.shape == (5, 5)
+    assert ad.shape == (5, 5)
+    assert identity.shape == (5, 5)
+    assert np.isclose(a.T, ad).all()
+
+    bracket = lie_bracket(g)
+    e1, e2, e3 = g.basis.vectors
+
+    assert np.isclose(bracket(e1, e2), e3).all()
+    assert np.isclose(bracket(e2, e1), - e3).all()
+    assert np.isclose(bracket(e1, e3), 0 * e1).all()
+    assert np.isclose(bracket(e2, e3), 0 * e1).all()
+
+
 def test_algebra_projection():
     np.random.seed(42)
     
