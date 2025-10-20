@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 from dataclasses import dataclass
 from typing import Any, Generator, Mapping, overload
-from .types import AntiHermitian, SquareMatrix, LieVector, is_anti_hermitian, is_square_matrix, is_vector
+from .types import SquareMatrix, LieVector, is_anti_hermitian, is_square_matrix, is_vector
 from .util import hash_array
 
 
@@ -34,15 +34,15 @@ def basis_vector(b: "int | LieBasis", index: int) -> LieVector:
 class LieBasis:
     ndim: int
     _labels: tuple[str, ...]
-    _elements: tuple[AntiHermitian, ...]
+    _elements: tuple[SquareMatrix, ...]
     _index: Mapping[str, int]
 
     @overload
-    def __getitem__(self, key: int) -> AntiHermitian: ...
+    def __getitem__(self, key: int) -> SquareMatrix: ...
     @overload
-    def __getitem__(self, key: str) -> AntiHermitian: ...
+    def __getitem__(self, key: str) -> SquareMatrix: ...
 
-    def __getitem__(self, key) -> AntiHermitian:
+    def __getitem__(self, key) -> SquareMatrix:
         if isinstance(key, str):
             idx = self._index[key]
             return self._elements[idx]
@@ -65,7 +65,7 @@ class LieBasis:
         *,
         dimension: int | None = None,
     ):
-        matrices: list[AntiHermitian] = []
+        matrices: list[SquareMatrix] = []
         for mat in elements.values():
             if dimension is None:
                 dimension = mat.shape[0]
@@ -83,13 +83,32 @@ class LieBasis:
         return cls(dimension, labels, tuple(matrices), index)
 
     @property
-    def elements(self) -> tuple[AntiHermitian, ...]:
+    def elements(self) -> tuple[SquareMatrix, ...]:
+        """The Lie algebra basis vectors in their matrix representation
+
+        Returns:
+            tuple[SquareMatrix, ...]: the matrix representations
+        """
         return self._elements
     
     @property
     def vectors(self) -> tuple[LieVector, ...]:
+        """The Lie algebra basis vectors
+
+        Returns:
+            tuple[LieVector, ...]: the basis vectors
+        """
         return tuple([basis_vector(self, i) for i in range(self.dim)])
-    
+
+    @property
+    def zero(self) -> LieVector:
+        """The zero vector on the Lie algebra
+
+        Returns:
+            LieVector: the zero vector
+        """
+        return jnp.zeros((self.dim,))
+
     @property
     def labels(self) -> tuple[str, ...]:
         return self._labels
@@ -103,7 +122,7 @@ class LieBasis:
         """
         return len(self._elements)
 
-    def items(self) -> Generator[tuple[str, AntiHermitian], None, None]:
+    def items(self) -> Generator[tuple[str, SquareMatrix], None, None]:
         for label, element in zip(self.labels, self.elements):
             yield label, element
 
@@ -119,17 +138,17 @@ def special_unitary_basis(ndim: int) -> LieBasis:
         assert is_square_matrix(Ma)
         return Ma
     
-    def S(i: int, j: int) -> AntiHermitian:
+    def S(i: int, j: int) -> SquareMatrix:
         M = 1j * (E(i, j) + E(j, i))
         assert is_anti_hermitian(M)
         return M
 
-    def A(i: int, j: int) -> AntiHermitian:
+    def A(i: int, j: int) -> SquareMatrix:
         M = E(i, j) - E(j, i)
         assert is_anti_hermitian(M)
         return M
     
-    def H(k: int) -> AntiHermitian:
+    def H(k: int) -> SquareMatrix:
         if not (1 <= k <= ndim - 1):
             raise ValueError(f"k must be in [1, {ndim - 1}]")
         d = np.zeros(ndim, dtype=complex)
@@ -140,7 +159,7 @@ def special_unitary_basis(ndim: int) -> LieBasis:
         assert is_anti_hermitian(M)
         return M
 
-    elements: dict[str, AntiHermitian] = {}
+    elements: dict[str, SquareMatrix] = {}
     for i in range(ndim):
         for j in range(i + 1, ndim):
             s_label = f"S({i + 1},{j + 1})"

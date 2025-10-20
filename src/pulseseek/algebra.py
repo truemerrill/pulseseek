@@ -17,7 +17,7 @@ import numpy as np
 
 from .basis import LieBasis, fock_basis, heisenburg_basis, special_unitary_basis
 from .types import (
-    AntiHermitian,
+    SquareMatrix,
     AntiSymmetricTensor,
     Hermitian,
     Scalar,
@@ -105,7 +105,7 @@ def lie_closure(
     ) -> dict[str, SquareMatrix]:
         """Generate new elements in one round of repeated Lie brackets."""
         v = list(vectors)
-        elements: dict[str, AntiHermitian] = {}
+        elements: dict[str, SquareMatrix] = {}
         idx = 0
 
         for E in brackets(v):
@@ -240,6 +240,7 @@ class LieAlgebra(NamedTuple):
         return self.G.shape[0]
 
 
+
 def _lie_algebra_explicit_su2() -> LieAlgebra:
     return _lie_algebra_implicit(special_unitary_basis(2))
 
@@ -335,7 +336,7 @@ def lie_projection(
     assert is_square_matrix(Ginv)
 
     @jax.jit
-    def project(matrix: AntiHermitian) -> LieVector:
+    def project(matrix: SquareMatrix) -> LieVector:
         h = jnp.array([inner_product(matrix, E) for E in algebra.basis.elements])
         r = Ginv @ h
         return r

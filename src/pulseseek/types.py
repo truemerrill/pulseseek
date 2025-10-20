@@ -47,7 +47,7 @@ def is_vector(x: Any, *, dimension: int | None = None) -> TypeGuard[LieVector]:
 Matrix = jax.Array
 SquareMatrix = Matrix
 Hermitian = Matrix
-AntiHermitian = Matrix
+SquareMatrix = Matrix
 
 
 def is_matrix(x: Any, *, shape: tuple[int, int] | None = None) -> TypeGuard[Matrix]:
@@ -93,7 +93,7 @@ def is_hermitian(
 
 def is_anti_hermitian(
     x: Any, *, dimension: int | None = None, atol: float = 1e-12
-) -> TypeGuard[AntiHermitian]:
+) -> TypeGuard[SquareMatrix]:
     if not is_square_matrix(x, dimension=dimension):
         return False
     X = np.asarray(x, dtype=np.complex64)

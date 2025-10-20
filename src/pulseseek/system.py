@@ -5,7 +5,7 @@ from typing import Any, Iterable
 
 from .algebra import LieAlgebra, lie_algebra, lie_closure, MatrixInnerProduct, hilbert_schmidt_inner_product, MatrixBracket, matrix_commutator
 from .basis import LieBasis
-from .types import Hermitian, AntiHermitian, is_anti_hermitian, is_hermitian, LieVector, is_vector
+from .types import Hermitian, SquareMatrix, is_anti_hermitian, is_hermitian, LieVector, is_vector
 
 
 @dataclass
@@ -83,7 +83,7 @@ class ControlSystem:
         algebra = lie_algebra(basis, inner_product, bracket)
 
         def decomposition(x: Any) -> LieVector:
-            def project(x: Any, y: AntiHermitian) -> float:
+            def project(x: Any, y: SquareMatrix) -> float:
                 assert is_anti_hermitian(x)
                 return inner_product(x, y)
 
