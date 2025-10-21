@@ -1,6 +1,10 @@
 from pulseseek.basis import special_unitary_basis
 from pulseseek.algebra import lie_algebra, lie_projection, lie_bracket
-from pulseseek.bch import baker_campbell_hausdorff, baker_campbell_hausdorff_series
+from pulseseek.bch import (
+    baker_campbell_hausdorff,
+    baker_campbell_hausdorff_series,
+    _baker_campbell_hausdorff_series_direct,
+)
 from pulseseek.types import is_anti_hermitian
 
 import jax.numpy as jnp
@@ -19,10 +23,10 @@ def test_baker_campbell_hausdorff():
 
     # We can compute the first few terms analytically
     assert jnp.allclose(terms[0], eps * (ex + ey))
-    assert jnp.allclose(terms[1], - eps**2 * ez)
-    assert jnp.allclose(terms[2], - eps**3 / 3 * (ex + ey))
+    assert jnp.allclose(terms[1], -(eps**2) * ez)
+    assert jnp.allclose(terms[2], -(eps**3) / 3 * (ex + ey))
     assert jnp.allclose(terms[3], 0 * ez)
-    assert jnp.allclose(terms[4], - eps**5 / 15 * (ex + ey))
+    assert jnp.allclose(terms[4], -(eps**5) / 15 * (ex + ey))
     assert jnp.allclose(terms[5], 2 * eps**6 / 45 * ez)
 
     er = sum(terms)
@@ -31,7 +35,21 @@ def test_baker_campbell_hausdorff():
     R = jnp.array(logm(expm(iX * eps) @ expm(iY * eps)))
     assert is_anti_hermitian(R)
     r = project(R)
-    assert jnp.allclose(er, r, atol=eps ** 10)    
+    assert jnp.allclose(er, r, atol=eps**10)
+
+
+def test_baker_campbell_hausdorff_series_direct():
+    su2 = lie_algebra("su2")
+    bracket = lie_bracket(su2)
+    series = baker_campbell_hausdorff_series(bracket, max_order=5)
+    eps = 1e-1
+    ex, ey, ez = su2.basis.vectors
+
+    terms = [fn(eps * ex, eps * ey) for fn in series]
+    direct = [fn(eps * ex, eps * ey) for fn in _baker_campbell_hausdorff_series_direct(bracket)]
+
+    for a, b in zip(terms, direct):
+        assert jnp.allclose(a, b)
 
 
 def test_baker_campbell_hausdorff_series_lifting():
@@ -54,8 +72,8 @@ def test_baker_campbell_hausdorff_series_lifting():
 
     # We can compute the first few terms analytically
     assert jnp.allclose(terms[0], eps * (ex + ey))
-    assert jnp.allclose(terms[1], - eps**2 * ez)
-    assert jnp.allclose(terms[2], - eps**3 / 3 * (ex + ey))
+    assert jnp.allclose(terms[1], -(eps**2) * ez)
+    assert jnp.allclose(terms[2], -(eps**3) / 3 * (ex + ey))
     assert jnp.allclose(terms[3], 0 * ez)
-    assert jnp.allclose(terms[4], - eps**5 / 15 * (ex + ey))
+    assert jnp.allclose(terms[4], -(eps**5) / 15 * (ex + ey))
     assert jnp.allclose(terms[5], 2 * eps**6 / 45 * ez)

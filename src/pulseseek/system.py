@@ -1,11 +1,27 @@
-import numpy as np
-import jax.numpy as jnp
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from .algebra import LieAlgebra, lie_algebra, lie_closure, MatrixInnerProduct, hilbert_schmidt_inner_product, MatrixBracket, matrix_commutator
+import jax.numpy as jnp
+import numpy as np
+
+from .algebra import (
+    LieAlgebra,
+    MatrixBracket,
+    MatrixInnerProduct,
+    hilbert_schmidt_inner_product,
+    lie_algebra,
+    lie_closure,
+    matrix_commutator,
+)
 from .basis import LieBasis
-from .types import Hermitian, AntiHermitian, is_anti_hermitian, is_hermitian, LieVector, is_vector
+from .types import (
+    Hermitian,
+    LieVector,
+    SquareMatrix,
+    is_anti_hermitian,
+    is_hermitian,
+    is_vector,
+)
 
 
 @dataclass
@@ -48,7 +64,7 @@ class ControlSystem:
             a set of vectors on a Lie algebra
 
             $$ V(u) = V_d + \\sum_i u_i V_i + \\epsilon V_e $$
- 
+
             where `V_d`, `V_i`, and `V_e` are the images of the Hamiltonains
             represented in the Lie algebra.
 
@@ -71,7 +87,7 @@ class ControlSystem:
             ControlSystem: the control system
         """
         H_controls = tuple(control_hamiltonians)
-        
+
         if basis is None:
             # Construct a Lie basis from the Lie closure
             Hd = {} if drift_hamiltonian is None else {"Hd": 1j * drift_hamiltonian}
@@ -83,7 +99,7 @@ class ControlSystem:
         algebra = lie_algebra(basis, inner_product, bracket)
 
         def decomposition(x: Any) -> LieVector:
-            def project(x: Any, y: AntiHermitian) -> float:
+            def project(x: Any, y: SquareMatrix) -> float:
                 assert is_anti_hermitian(x)
                 return inner_product(x, y)
 
@@ -91,21 +107,23 @@ class ControlSystem:
             v = jnp.linalg.solve(algebra.G, g)
             assert is_vector(v)
             return v
-        
-        E_drift = None if drift_hamiltonian is None else decomposition(1j * drift_hamiltonian)
+
+        E_drift = (
+            None if drift_hamiltonian is None else decomposition(1j * drift_hamiltonian)
+        )
         E_controls = tuple([decomposition(1j * H) for H in H_controls])
         E_error = decomposition(1j * error_hamiltonian)
 
         return cls(
-            _H_drift = drift_hamiltonian,
-            _H_controls = H_controls,
-            _H_error = error_hamiltonian,
-            _E_drift = E_drift,
-            _E_controls = E_controls,
-            _E_error = E_error,
-            basis = basis,
-            algebra = algebra
-        )  
+            _H_drift=drift_hamiltonian,
+            _H_controls=H_controls,
+            _H_error=error_hamiltonian,
+            _E_drift=E_drift,
+            _E_controls=E_controls,
+            _E_error=E_error,
+            basis=basis,
+            algebra=algebra,
+        )
 
     def control_hamiltonian(self, control: Iterable[float]) -> Hermitian:
         """Calculate the ideal (error free) Hamiltonian under the control
@@ -128,10 +146,10 @@ class ControlSystem:
 
     def control_lie_vector(self, control: Iterable[float]) -> LieVector:
         """Calculate the image of the ideal Hamiltonian in the Lie algebra
-        
+
         Args:
             control (Vector): the control vector
-        
+
         Returns:
             Vector: the Lie algebra representation of the ideal Hamiltonian
         """

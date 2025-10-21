@@ -8,21 +8,20 @@ from typing import (
     Literal,
     Mapping,
     NamedTuple,
-    overload
+    overload,
 )
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .basis import LieBasis, fock_basis, heisenburg_basis, special_unitary_basis
+from .basis import LieBasis, fock_basis, heisenburg_basis, pauli_basis
 from .types import (
-    AntiHermitian,
     AntiSymmetricTensor,
     Hermitian,
+    LieVector,
     Scalar,
     SquareMatrix,
-    LieVector,
     is_antisymmetric_tensor,
     is_hermitian,
     is_square_matrix,
@@ -40,7 +39,7 @@ MatrixBracket = Callable[[SquareMatrix, SquareMatrix], SquareMatrix]
 
 
 def hilbert_schmidt_inner_product(X: SquareMatrix, Y: SquareMatrix) -> Scalar:
-    return jnp.trace(X.T.conj() @ Y)
+    return jnp.real(jnp.trace(X.T.conj() @ Y))
 
 
 def matrix_commutator(X: SquareMatrix, Y: SquareMatrix) -> SquareMatrix:
@@ -105,7 +104,7 @@ def lie_closure(
     ) -> dict[str, SquareMatrix]:
         """Generate new elements in one round of repeated Lie brackets."""
         v = list(vectors)
-        elements: dict[str, AntiHermitian] = {}
+        elements: dict[str, SquareMatrix] = {}
         idx = 0
 
         for E in brackets(v):
@@ -158,7 +157,7 @@ def gram_matrix(
         Hermitian: the Gram matrix
     """
     m = basis.dim
-    G = np.zeros((m, m), dtype=complex)
+    G = np.zeros((m, m))
     for a in range(m):
         for b in range(m):
             A = basis[a]
@@ -200,7 +199,7 @@ def structure_constants(
         AntiSymmetricTensor: the structure constant tensor
     """
     m = basis.dim
-    S = np.zeros((m, m, m), dtype=complex)
+    S = np.zeros((m, m, m))
     G = gram_matrix(basis, inner_product)
     Ginv = jnp.linalg.inv(G)
 
@@ -241,7 +240,7 @@ class LieAlgebra(NamedTuple):
 
 
 def _lie_algebra_explicit_su2() -> LieAlgebra:
-    return _lie_algebra_implicit(special_unitary_basis(2))
+    return _lie_algebra_implicit(pauli_basis())
 
 
 def _lie_algebra_explicit_heisenberg() -> LieAlgebra:
@@ -290,30 +289,25 @@ def lie_algebra(
     basis: LieBasis,
     *,
     inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
-    bracket:MatrixBracket = matrix_commutator
+    bracket: MatrixBracket = matrix_commutator,
 ) -> LieAlgebra: ...
+
 
 @overload
 def lie_algebra(
     basis: Literal["su2"],
 ) -> LieAlgebra: ...
 
-@overload
-def lie_algebra(
-    basis: Literal["heisenberg"]
-) -> LieAlgebra: ...
 
 @overload
-def lie_algebra(
-    basis: Literal["heisenberg-fock"],
-    *,
-    ndim: int = 15
-) -> LieAlgebra: ...
+def lie_algebra(basis: Literal["heisenberg"]) -> LieAlgebra: ...
 
-def lie_algebra(
-    basis,
-    **kwargs
-) -> LieAlgebra:
+
+@overload
+def lie_algebra(basis: Literal["heisenberg-fock"], *, ndim: int = 15) -> LieAlgebra: ...
+
+
+def lie_algebra(basis, **kwargs) -> LieAlgebra:
     if isinstance(basis, LieBasis):
         return _lie_algebra_implicit(basis, **kwargs)
     else:
@@ -335,7 +329,7 @@ def lie_projection(
     assert is_square_matrix(Ginv)
 
     @jax.jit
-    def project(matrix: AntiHermitian) -> LieVector:
+    def project(matrix: SquareMatrix) -> LieVector:
         h = jnp.array([inner_product(matrix, E) for E in algebra.basis.elements])
         r = Ginv @ h
         return r
@@ -427,7 +421,7 @@ def lie_adjoint_action(
     inner_product = lie_inner_product(algebra)
     bracket = lie_bracket(algebra)
 
-    @jax.jit
+    # @jax.jit
     def adjoint_action_horner(x: LieVector, y: LieVector) -> LieVector:
         """Computes the Taylor series of Ad_{exp(x)} y using Horner's method.
 
@@ -447,7 +441,7 @@ def lie_adjoint_action(
             return LieAdjointCarry(result, term, n)
 
         def cond(carry: LieAdjointCarry) -> jax.Array:
-            norm = jnp.sqrt(inner_product(carry.term, carry.term))
+            norm = jnp.real(jnp.sqrt(inner_product(carry.term, carry.term)))
             is_not_converged = jnp.array(norm >= eps).reshape(())
             is_not_done = jnp.array(carry.n < max_terms).reshape(())
             return jnp.logical_and(is_not_converged, is_not_done)

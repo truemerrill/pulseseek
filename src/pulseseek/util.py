@@ -1,7 +1,9 @@
-import jax.numpy as jnp
-from jax import Array
 from itertools import combinations
 from typing import Iterator
+
+import jax.numpy as jnp
+from jax import Array
+
 from .types import Hermitian, is_hermitian
 
 
@@ -26,7 +28,9 @@ def pauli() -> tuple[Hermitian, Hermitian, Hermitian]:
     return X, Y, Z
 
 
-def sumsto(total: int, degree: int) -> Iterator[tuple[int, ...]]:
+def sumsto(
+    total: int, degree: int, skip_zero: bool = True
+) -> Iterator[tuple[int, ...]]:
     """Iterate over tuples of length `degree` that sum to `total`.
 
     Args:
@@ -38,7 +42,14 @@ def sumsto(total: int, degree: int) -> Iterator[tuple[int, ...]]:
     """
     if degree <= 0 or total <= 0:
         return
-    
-    for cuts in combinations(range(1, total), degree - 1):
+
+    offset = 0 if skip_zero else 1
+    for cuts in combinations(range(1 - offset, total + offset), degree - 1):
         parts = [a - b for a, b in zip(cuts + (total,), (0,) + cuts)]
         yield tuple(parts)
+
+
+# def sumsto_bidegree(
+#     total: int, p: int, q: int
+# ) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
+#     pass

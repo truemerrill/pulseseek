@@ -5,21 +5,20 @@ from fractions import Fraction
 from importlib.resources import files
 from typing import (
     Callable,
+    Generic,
     Iterable,
     Iterator,
     Literal,
     NamedTuple,
     TypeVar,
-    Generic,
     overload,
 )
 
 import jax
 from jax import numpy as jnp
 
-from .algebra import LieBracket, LieAlgebra, lie_bracket
+from .algebra import LieAlgebra, LieBracket, lie_bracket
 from .types import LieVector, Matrix
-
 
 """
 Baker-Campbell-Hausdorff (BCH) series
@@ -98,7 +97,7 @@ class BCHMonomial:
     """A single BCH bracket monomial (no sums), bihomogeneous in (x, y).
 
     !!! note
-        
+
         This object represents one nested Lie-bracket expression built from
         `p` copies of `x` and `q` copies of `y` (e.g., `[x, [x, y]]`). As a
         multilinear map in its `p + q` formal arguments it is linear in each
@@ -107,9 +106,10 @@ class BCHMonomial:
         of bidegree `(p, q)`:
 
         $$ T(a x, b y) = a^p b^q T(x, y) $$
-        
-        for all scalars `a`, `b`.    
+
+        for all scalars `a`, `b`.
     """
+
     order: int
     degree_x: int
     degree_y: int
@@ -190,6 +190,7 @@ T = TypeVar("T", BilinearMap, BCHLiftingMap)
 
 class BCHCompilerPrimitives(NamedTuple, Generic[T]):
     """A data structure storing factory functions to produce BCH primitives"""
+
     compile_x: Callable[[BCHOperation], T]
     compile_y: Callable[[BCHOperation], T]
     compile_br: Callable[[BCHOperation, T, T], T]
@@ -197,7 +198,7 @@ class BCHCompilerPrimitives(NamedTuple, Generic[T]):
 
 def _bch_primitives(bracket: BilinearMap) -> BCHCompilerPrimitives[BilinearMap]:
     """Build the standard BCH primitive factories"""
-    
+
     def compile_x(op: BCHOperation) -> BilinearMap:
         assert op.flag == "X"
 
@@ -328,7 +329,7 @@ def _compile_polynomial(
             z += term
         return z
 
-    return poly_fn # type: ignore
+    return poly_fn  # type: ignore
 
 
 def _iter_bch_polynomial(max_order: int = BCH_MAX_ORDER) -> Iterator[BCHPolynomial]:
