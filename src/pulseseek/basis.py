@@ -1,9 +1,9 @@
+import functools
 from dataclasses import dataclass
 from typing import Any, Generator, Mapping, overload
 
 import jax.numpy as jnp
 import numpy as np
-import functools
 
 from .types import (
     LieVector,
@@ -130,7 +130,7 @@ class LieBasis:
     def items(self) -> Generator[tuple[str, SquareMatrix], None, None]:
         for label, element in zip(self.labels, self.elements):
             yield label, element
-    
+
     def matrix(self, x: LieVector) -> SquareMatrix:
         """The matrix representation of a Lie algebra vector
 
@@ -140,12 +140,12 @@ class LieBasis:
         Returns:
             SquareMatrix: the matrix representation of xs
         """
+
         def matrix_sum(a: SquareMatrix, b: SquareMatrix) -> SquareMatrix:
             return a + b
-  
+
         return functools.reduce(
-            matrix_sum,
-            (xi * ei for xi, ei in zip(x, self.elements))
+            matrix_sum, (xi * ei for xi, ei in zip(x, self.elements))
         )
 
 
