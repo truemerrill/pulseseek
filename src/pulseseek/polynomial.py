@@ -48,6 +48,10 @@ class LiePolynomial(NamedTuple):
     def __call__(self, t: float) -> LieVector:
         return self.evaluate(t)
 
+    @classmethod
+    def new(cls, *coeffs: LieVector):
+        return cls(coeffs)
+
 
 @functools.cache
 def lie_polynomial_adjoint_action(

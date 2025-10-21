@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from scipy.linalg import expm
 
 from pulseseek.types import is_vector, is_anti_hermitian, is_hermitian
-from pulseseek.basis import special_unitary_basis, basis_vector
+from pulseseek.basis import special_unitary_basis, pauli_basis, basis_vector
 from pulseseek.algebra import (
     hilbert_schmidt_inner_product,
     matrix_commutator,
@@ -19,7 +19,7 @@ from pulseseek.algebra import (
 
 def test_algebra_explicit_su2():
     g1 = lie_algebra("su2")
-    g2 = lie_algebra(special_unitary_basis(2))
+    g2 = lie_algebra(pauli_basis())
     assert g1 == g2
 
 

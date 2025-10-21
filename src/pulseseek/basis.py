@@ -3,6 +3,7 @@ from typing import Any, Generator, Mapping, overload
 
 import jax.numpy as jnp
 import numpy as np
+import functools
 
 from .types import (
     LieVector,
@@ -11,7 +12,7 @@ from .types import (
     is_square_matrix,
     is_vector,
 )
-from .util import hash_array
+from .util import hash_array, pauli
 
 
 @overload
@@ -129,6 +130,23 @@ class LieBasis:
     def items(self) -> Generator[tuple[str, SquareMatrix], None, None]:
         for label, element in zip(self.labels, self.elements):
             yield label, element
+    
+    def matrix(self, x: LieVector) -> SquareMatrix:
+        """The matrix representation of a Lie algebra vector
+
+        Args:
+            x (LieVector): the Lie algebra vector
+
+        Returns:
+            SquareMatrix: the matrix representation of xs
+        """
+        def matrix_sum(a: SquareMatrix, b: SquareMatrix) -> SquareMatrix:
+            return a + b
+  
+        return functools.reduce(
+            matrix_sum,
+            (xi * ei for xi, ei in zip(x, self.elements))
+        )
 
 
 def special_unitary_basis(ndim: int) -> LieBasis:
@@ -179,6 +197,16 @@ def special_unitary_basis(ndim: int) -> LieBasis:
     return LieBasis.new(elements, dimension=ndim)
 
 
+def pauli_basis() -> LieBasis:
+    """The Pauli operator basis for the su(2) algebra
+
+    Returns:
+        LieBasis: the Pauli basis
+    """
+    X, Y, Z = pauli()
+    return LieBasis.new({"iX": 1j * X, "iY": 1j * Y, "iZ": 1j * Z})
+
+
 def heisenburg_basis() -> LieBasis:
     """Heisenburg algebra using traditional basis.
 
@@ -221,6 +249,6 @@ def fock_basis(ndim: int = 15) -> LieBasis:
         return I
 
     A = annihilation()
-    I = identity()
-    elements = {"a": A, "a†": A.T.conj(), "I": I}
+    Id = identity()
+    elements = {"a": A, "a†": A.T.conj(), "I": Id}
     return LieBasis.new(elements)
