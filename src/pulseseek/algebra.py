@@ -8,7 +8,7 @@ from typing import (
     Literal,
     Mapping,
     NamedTuple,
-    overload
+    overload,
 )
 
 import jax
@@ -17,12 +17,11 @@ import numpy as np
 
 from .basis import LieBasis, fock_basis, heisenburg_basis, special_unitary_basis
 from .types import (
-    SquareMatrix,
     AntiSymmetricTensor,
     Hermitian,
+    LieVector,
     Scalar,
     SquareMatrix,
-    LieVector,
     is_antisymmetric_tensor,
     is_hermitian,
     is_square_matrix,
@@ -240,7 +239,6 @@ class LieAlgebra(NamedTuple):
         return self.G.shape[0]
 
 
-
 def _lie_algebra_explicit_su2() -> LieAlgebra:
     return _lie_algebra_implicit(special_unitary_basis(2))
 
@@ -291,30 +289,25 @@ def lie_algebra(
     basis: LieBasis,
     *,
     inner_product: MatrixInnerProduct = hilbert_schmidt_inner_product,
-    bracket:MatrixBracket = matrix_commutator
+    bracket: MatrixBracket = matrix_commutator,
 ) -> LieAlgebra: ...
+
 
 @overload
 def lie_algebra(
     basis: Literal["su2"],
 ) -> LieAlgebra: ...
 
-@overload
-def lie_algebra(
-    basis: Literal["heisenberg"]
-) -> LieAlgebra: ...
 
 @overload
-def lie_algebra(
-    basis: Literal["heisenberg-fock"],
-    *,
-    ndim: int = 15
-) -> LieAlgebra: ...
+def lie_algebra(basis: Literal["heisenberg"]) -> LieAlgebra: ...
 
-def lie_algebra(
-    basis,
-    **kwargs
-) -> LieAlgebra:
+
+@overload
+def lie_algebra(basis: Literal["heisenberg-fock"], *, ndim: int = 15) -> LieAlgebra: ...
+
+
+def lie_algebra(basis, **kwargs) -> LieAlgebra:
     if isinstance(basis, LieBasis):
         return _lie_algebra_implicit(basis, **kwargs)
     else:

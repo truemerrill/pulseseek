@@ -1,7 +1,9 @@
-import jax.numpy as jnp
-from jax import Array
 from itertools import combinations
 from typing import Iterator
+
+import jax.numpy as jnp
+from jax import Array
+
 from .types import Hermitian, is_hermitian
 
 
@@ -26,7 +28,9 @@ def pauli() -> tuple[Hermitian, Hermitian, Hermitian]:
     return X, Y, Z
 
 
-def sumsto(total: int, degree: int, skip_zero: bool = True) -> Iterator[tuple[int, ...]]:
+def sumsto(
+    total: int, degree: int, skip_zero: bool = True
+) -> Iterator[tuple[int, ...]]:
     """Iterate over tuples of length `degree` that sum to `total`.
 
     Args:

@@ -1,9 +1,16 @@
-import numpy as np
-import jax.numpy as jnp
-
 from dataclasses import dataclass
 from typing import Any, Generator, Mapping, overload
-from .types import SquareMatrix, LieVector, is_anti_hermitian, is_square_matrix, is_vector
+
+import jax.numpy as jnp
+import numpy as np
+
+from .types import (
+    LieVector,
+    SquareMatrix,
+    is_anti_hermitian,
+    is_square_matrix,
+    is_vector,
+)
 from .util import hash_array
 
 
@@ -11,6 +18,7 @@ from .util import hash_array
 def basis_vector(b: int, index: int) -> LieVector: ...
 @overload
 def basis_vector(b: "LieBasis", index: int) -> LieVector: ...
+
 
 def basis_vector(b: "int | LieBasis", index: int) -> LieVector:
     """Construct a Lie basis vector
@@ -52,11 +60,9 @@ class LieBasis:
             raise KeyError(f"Invalid key: {key}")
 
     def __hash__(self) -> int:
-        return hash((
-            self.ndim,
-            self._labels,
-            tuple([hash_array(el) for el in self._elements])
-        ))
+        return hash(
+            (self.ndim, self._labels, tuple([hash_array(el) for el in self._elements]))
+        )
 
     @classmethod
     def new(
@@ -70,11 +76,9 @@ class LieBasis:
             if dimension is None:
                 dimension = mat.shape[0]
             if not is_square_matrix(mat, dimension=dimension):
-                raise ValueError(
-                    f"Not a square matrix of dimension {dimension}: {mat}"
-                )
+                raise ValueError(f"Not a square matrix of dimension {dimension}: {mat}")
             matrices.append(mat)
-            
+
         if dimension is None:
             raise ValueError("Could not infer dimension")
 
@@ -90,7 +94,7 @@ class LieBasis:
             tuple[SquareMatrix, ...]: the matrix representations
         """
         return self._elements
-    
+
     @property
     def vectors(self) -> tuple[LieVector, ...]:
         """The Lie algebra basis vectors
@@ -137,7 +141,7 @@ def special_unitary_basis(ndim: int) -> LieBasis:
         Ma = jnp.array(M)
         assert is_square_matrix(Ma)
         return Ma
-    
+
     def S(i: int, j: int) -> SquareMatrix:
         M = 1j * (E(i, j) + E(j, i))
         assert is_anti_hermitian(M)
@@ -147,13 +151,13 @@ def special_unitary_basis(ndim: int) -> LieBasis:
         M = E(i, j) - E(j, i)
         assert is_anti_hermitian(M)
         return M
-    
+
     def H(k: int) -> SquareMatrix:
         if not (1 <= k <= ndim - 1):
             raise ValueError(f"k must be in [1, {ndim - 1}]")
         d = np.zeros(ndim, dtype=complex)
         d[:k] = 1.0
-        d[k] = - k
+        d[k] = -k
         d = d * np.sqrt(2) / np.sqrt(k * (k + 1))
         M = 1j * jnp.diag(d)
         assert is_anti_hermitian(M)
@@ -167,7 +171,7 @@ def special_unitary_basis(ndim: int) -> LieBasis:
 
             elements[s_label] = S(i, j)
             elements[a_label] = A(i, j)
-    
+
     for k in range(1, ndim):
         h_label = f"H({k})"
         elements[h_label] = H(k)
@@ -188,11 +192,7 @@ def heisenburg_basis() -> LieBasis:
     X = jnp.array([[0, 1, 0], [0, 0, 0], [0, 0, 0]])
     Y = jnp.array([[0, 0, 0], [0, 0, 1], [0, 0, 0]])
     Z = jnp.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]])
-    elements = {
-        "X": X,
-        "Y": Y,
-        "Z": Z
-    }
+    elements = {"X": X, "Y": Y, "Z": Z}
     return LieBasis.new(elements)
 
 
@@ -214,7 +214,7 @@ def fock_basis(ndim: int = 15) -> LieBasis:
         A = jnp.array(a)
         assert is_square_matrix(A)
         return A
-    
+
     def identity() -> SquareMatrix:
         I = jnp.array(np.eye(ndim))
         assert is_square_matrix(I)
@@ -222,9 +222,5 @@ def fock_basis(ndim: int = 15) -> LieBasis:
 
     A = annihilation()
     I = identity()
-    elements = {
-        "a": A,
-        "a†": A.T.conj(),
-        "I": I
-    }
+    elements = {"a": A, "a†": A.T.conj(), "I": I}
     return LieBasis.new(elements)

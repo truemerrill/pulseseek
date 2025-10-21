@@ -1,13 +1,14 @@
+import functools
+from dataclasses import dataclass
+from typing import Callable, Iterator, NamedTuple
+
 import jax
 import jax.numpy as jnp
-import functools
 
-from dataclasses import dataclass
-from typing import Callable, NamedTuple, Iterator
-from .algebra import LieAlgebra, lie_bracket, lie_adjoint_action
-from .bch import BCH_MAX_ORDER, baker_campbell_hausdorff_compile, BCHLifting, BCHLiftingMap
-from .util import sumsto
+from .algebra import LieAlgebra, lie_adjoint_action, lie_bracket
+from .bch import BCHLifting, BCHLiftingMap, baker_campbell_hausdorff_compile
 from .types import LieVector, is_vector
+from .util import sumsto
 
 
 class LiePolynomial(NamedTuple):
@@ -94,7 +95,9 @@ def _lifting(polynomial: LiePolynomial, indices: tuple[int, ...]) -> BCHLifting:
     return lifted
 
 
-def _iter_lifting_indices(order: int) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
+def _iter_lifting_indices(
+    order: int,
+) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
     for degree in range(1, order + 1):
         for indices in sumsto(order, degree):
             for k in range(degree + 1):
@@ -104,7 +107,7 @@ def _iter_lifting_indices(order: int) -> Iterator[tuple[tuple[int, ...], tuple[i
 @dataclass(frozen=True)
 class BCHLiftingPlanTerm:
     """A single BCH multilinear lifting term \\( F_{p, q}(X_r, Y_s) \\)
-    
+
     Attributes:
         r (jax.Array): indices for the multilinear lifting of x
         s (jax.Array): indices for the multilinear lifting of y
@@ -112,6 +115,7 @@ class BCHLiftingPlanTerm:
         q (int): the degree of the multilinear lifting of y
         F (BCHLiftingMap): the lifted BCH term function
     """
+
     r: jax.Array
     s: jax.Array
     p: int
@@ -122,6 +126,7 @@ class BCHLiftingPlanTerm:
 @dataclass(frozen=True)
 class BCHLiftingPlanOrder:
     """Collection of all terms that contribute to order"""
+
     order: int
     terms: tuple[BCHLiftingPlanTerm, ...]
 
@@ -129,15 +134,12 @@ class BCHLiftingPlanOrder:
 @dataclass(frozen=True)
 class BCHLiftingPlan:
     """Collection of all terms up to and including max_order"""
+
     max_order: int
     orders: tuple[BCHLiftingPlanOrder, ...]
 
     @classmethod
-    def new(
-        cls,
-        Z: dict[tuple[int, int], BCHLiftingMap],
-        max_order: int
-    ):
+    def new(cls, Z: dict[tuple[int, int], BCHLiftingMap], max_order: int):
         orders: list[BCHLiftingPlanOrder] = []
         for n in range(1, max_order + 1):
             terms: list[BCHLiftingPlanTerm] = []
@@ -161,8 +163,7 @@ DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER = 6
 
 @functools.cache
 def lie_polynomial_bch_product(
-    algebra: LieAlgebra,
-    max_order: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER
+    algebra: LieAlgebra, max_order: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER
 ) -> LiePolynomialProduct:
     """Compile the BCH product between Lie polynomials
 
@@ -176,7 +177,7 @@ def lie_polynomial_bch_product(
 
     Args:
         algebra (LieAlgebra): the Lie algebra
-        max_order (int, optional): the truncation order of the BCH series. 
+        max_order (int, optional): the truncation order of the BCH series.
             Defaults to DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER.
 
     Returns:

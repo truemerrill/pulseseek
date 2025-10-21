@@ -1,9 +1,10 @@
 from typing import Any, TypeGuard
-import numpy as np
-import jax
 
+import jax
+import numpy as np
 
 Scalar = float | complex | np.floating[Any] | np.complexfloating[Any, Any] | jax.Array
+
 
 def is_scalar(x: Any) -> TypeGuard[Scalar]:
     """Check if x is a Scalar
@@ -139,11 +140,11 @@ def is_antisymmetric_tensor(
         return False
     if x.ndim != 3:
         return False
-     
+
     m = dimension if dimension else x.shape[0]
     if not x.shape == (m, m, m):
         return False
     for a in range(m):
-        if not np.allclose(x[a], - x[a].T, atol=atol):
+        if not np.allclose(x[a], -x[a].T, atol=atol):
             return False
     return True
