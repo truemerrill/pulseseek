@@ -2,9 +2,10 @@ import jax
 import jax.numpy as jnp
 import functools
 
+from dataclasses import dataclass
 from typing import Callable, NamedTuple, Iterator
 from .algebra import LieAlgebra, lie_bracket, lie_adjoint_action
-from .bch import BCH_MAX_ORDER, baker_campbell_hausdorff_compile, BCHLifting
+from .bch import BCH_MAX_ORDER, baker_campbell_hausdorff_compile, BCHLifting, BCHLiftingMap
 from .util import sumsto
 from .types import LieVector, is_vector
 
@@ -100,36 +101,105 @@ def _iter_lifting_indices(order: int) -> Iterator[tuple[tuple[int, ...], tuple[i
                 yield tuple(indices[:k]), tuple(indices[k:])
 
 
+@dataclass(frozen=True)
+class BCHLiftingPlanTerm:
+    """A single BCH multilinear lifting term \\( F_{p, q}(X_r, Y_s) \\)
+    
+    Attributes:
+        r (jax.Array): indices for the multilinear lifting of x
+        s (jax.Array): indices for the multilinear lifting of y
+        p (int): the degree of the multilinear lifting of x
+        q (int): the degree of the multilinear lifting of y
+        F (BCHLiftingMap): the lifted BCH term function
+    """
+    r: jax.Array
+    s: jax.Array
+    p: int
+    q: int
+    F: BCHLiftingMap
+
+
+@dataclass(frozen=True)
+class BCHLiftingPlanOrder:
+    """Collection of all terms that contribute to order"""
+    order: int
+    terms: tuple[BCHLiftingPlanTerm, ...]
+
+
+@dataclass(frozen=True)
+class BCHLiftingPlan:
+    """Collection of all terms up to and including max_order"""
+    max_order: int
+    orders: tuple[BCHLiftingPlanOrder, ...]
+
+    @classmethod
+    def new(
+        cls,
+        Z: dict[tuple[int, int], BCHLiftingMap],
+        max_order: int
+    ):
+        orders: list[BCHLiftingPlanOrder] = []
+        for n in range(1, max_order + 1):
+            terms: list[BCHLiftingPlanTerm] = []
+            for r, s in _iter_lifting_indices(n):
+                p, q = len(r), len(s)
+                F_pq = Z.get((p, q))
+                if F_pq is None:
+                    continue
+
+                ra = jnp.asarray(r, dtype=jnp.int32)
+                sa = jnp.asarray(s, dtype=jnp.int32)
+                terms.append(BCHLiftingPlanTerm(ra, sa, p, q, F_pq))
+            orders.append(BCHLiftingPlanOrder(n, tuple(terms)))
+        return cls(max_order, tuple(orders))
+
+
 LiePolynomialProduct = Callable[[LiePolynomial, LiePolynomial], LiePolynomial]
 
+DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER = 6
 
+
+@functools.cache
 def lie_polynomial_bch_product(
     algebra: LieAlgebra,
-    max_order: int = BCH_MAX_ORDER
+    max_order: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER
 ) -> LiePolynomialProduct:
+    """Compile the BCH product between Lie polynomials
+
+    !!! note
+        Given two Lie polynomials `x(t)` and `y(t)`, their BCH product is
+        defined as
+
+        $$ log(exp(x(t)) exp(y(t))) = Z(x(t), y(t)) $$
+
+        where `Z` is defined by the Baker-Campbell-Hausdorff series.
+
+    Args:
+        algebra (LieAlgebra): the Lie algebra
+        max_order (int, optional): the truncation order of the BCH series. 
+            Defaults to DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER.
+
+    Returns:
+        LiePolynomialProduct: the function computing the BCH product.
+    """
     bracket = lie_bracket(algebra)
     zero = algebra.basis.zero
     Z = baker_campbell_hausdorff_compile(bracket, max_order, "lifting")
 
-    # @jax.jit
-    def product_term(x: LiePolynomial, y: LiePolynomial, n: int) -> LieVector:
-        wn = zero
-        for r, s in _iter_lifting_indices(n):
-            p, q = len(r), len(s)
-            
-            # Check for the F_pq function
-            F_pq = Z.get((p, q))
-            if not F_pq:
-                continue
+    # Build a static plan so there are no dict lookups inside jit
+    plan = BCHLiftingPlan.new(Z, max_order)
 
-            xl, yl = _lifting(x, r), _lifting(y, s)
-            term = F_pq(xl, yl)
-            wn += term
-        return wn
-    
-
+    @jax.jit
     def product(x: LiePolynomial, y: LiePolynomial) -> LiePolynomial:
-        coeffs = tuple(product_term(x, y, n) for n in range(1, max_order + 1))
-        return LiePolynomial(coeffs)
+        coeffs: list[LieVector] = []
+        for order_plan in plan.orders:
+            wn = zero
+            for term_plan in order_plan.terms:
+                xl = _lifting(x, term_plan.r)
+                yl = _lifting(y, term_plan.s)
+                F = term_plan.F
+                wn = wn + F(xl, yl)
+            coeffs.append(wn)
+        return LiePolynomial(tuple(coeffs))
 
     return product
