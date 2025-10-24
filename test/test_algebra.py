@@ -1,6 +1,7 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
+import pytest
 from scipy.linalg import expm
 
 from pulseseek.types import is_vector, is_anti_hermitian, is_hermitian
@@ -153,6 +154,15 @@ def test_algebra_bracket():
         )
 
 
+@pytest.mark.bench
+def test_algebra_bracket_benchmark(compile_then_benchmark):
+    su2 = lie_algebra("su2")
+    bracket = lie_bracket(su2)
+
+    ex, ey, ez = su2.basis.vectors
+    compile_then_benchmark(bracket, ex, ey)
+
+
 def test_algebra_adjoint_action():
     su3_basis = special_unitary_basis(3)
     su3 = lie_algebra(su3_basis)
@@ -194,6 +204,18 @@ def test_algebra_adjoint_action():
         assert is_anti_hermitian(C)
 
         assert np.isclose(1j * C, Ht, atol=1e-12).all()
+
+
+@pytest.mark.bench
+@pytest.mark.parametrize("n", [2, 3, 4, 5, 6])
+def test_algebra_adjoint_action_benchmark(compile_then_benchmark, n):
+    algebra = lie_algebra(special_unitary_basis(n))
+    m = algebra.basis.dim
+    Ad = lie_adjoint_action(algebra)
+
+    a = jnp.array(np.random.normal(size=m))
+    b = jnp.array(np.random.normal(size=m))
+    compile_then_benchmark(Ad, a, b)
 
 
 def test_lie_closure():

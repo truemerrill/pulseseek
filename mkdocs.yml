@@ -48,3 +48,4 @@ nav:
   - Theory: theory.md
   - Reference:
       - API: api.md
+      - Math: math.md

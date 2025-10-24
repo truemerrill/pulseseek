@@ -47,9 +47,3 @@ def sumsto(
     for cuts in combinations(range(1 - offset, total + offset), degree - 1):
         parts = [a - b for a, b in zip(cuts + (total,), (0,) + cuts)]
         yield tuple(parts)
-
-
-# def sumsto_bidegree(
-#     total: int, p: int, q: int
-# ) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
-#     pass

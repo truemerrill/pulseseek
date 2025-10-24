@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
+    "pytest-benchmark",
     "scipy",
 ]
 docs = [
@@ -32,3 +33,15 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 pulseseek = ["bch.csv"]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-q",
+    "--benchmark-autosave",
+    "--benchmark-min-time=0.2",
+    "--benchmark-max-time=2.0",
+    "--benchmark-min-rounds=5"
+]
+markers = [
+    "bench: benchmarks (may be slow)"
+]
