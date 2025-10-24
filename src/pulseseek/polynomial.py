@@ -139,16 +139,36 @@ class BCHLiftingPlanOrder:
 class BCHLiftingPlan:
     """Collection of all terms up to and including max_order"""
 
-    max_order: int
+    left_degree: int
+    right_degree: int
+    product_degree: int
     orders: tuple[BCHLiftingPlanOrder, ...]
 
     @classmethod
-    def new(cls, Z: dict[tuple[int, int], BCHLiftingMap], max_order: int):
+    def new(
+        cls,
+        Z: dict[tuple[int, int], BCHLiftingMap],
+        left_degree: int,
+        right_degree: int,
+        product_degree: int,
+    ):
+        def highest_polynomial_degree(indices: tuple[int, ...]) -> int:
+            return max(indices) if len(indices) > 0 else 0
+
         orders: list[BCHLiftingPlanOrder] = []
-        for n in range(1, max_order + 1):
+        for n in range(1, product_degree + 1):
             terms: list[BCHLiftingPlanTerm] = []
             for r, s in _iter_lifting_indices(n):
                 p, q = len(r), len(s)
+
+                # Only keep terms that use polynomial coefficients smaller or
+                # equal to left_degree and right_degree
+                if (
+                    highest_polynomial_degree(r) > left_degree
+                    or highest_polynomial_degree(s) > right_degree
+                ):
+                    continue
+
                 F_pq = Z.get((p, q))
                 if F_pq is None:
                     continue
@@ -157,7 +177,7 @@ class BCHLiftingPlan:
                 sa = jnp.asarray(s, dtype=jnp.int32)
                 terms.append(BCHLiftingPlanTerm(ra, sa, p, q, F_pq))
             orders.append(BCHLiftingPlanOrder(n, tuple(terms)))
-        return cls(max_order, tuple(orders))
+        return cls(left_degree, right_degree, product_degree, tuple(orders))
 
 
 LiePolynomialProduct = Callable[[LiePolynomial, LiePolynomial], LiePolynomial]
@@ -167,7 +187,10 @@ DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER = 6
 
 @functools.cache
 def lie_polynomial_bch_product(
-    algebra: LieAlgebra, max_order: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER
+    algebra: LieAlgebra,
+    left_degree: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER,
+    right_degree: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER,
+    product_degree: int = DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER,
 ) -> LiePolynomialProduct:
     """Compile the BCH product between Lie polynomials
 
@@ -181,18 +204,28 @@ def lie_polynomial_bch_product(
 
     Args:
         algebra (LieAlgebra): the Lie algebra
-        max_order (int, optional): the truncation order of the BCH series.
-            Defaults to DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER.
+        left_degree (int, optional): the highest polynomial degree of the
+            left argument `x(t)`.  Terms in `x(t)` higher than `left_degree`
+            are ignored during the product. Defaults to
+            `DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER`.
+        right_degree (int, optional): the highest polynomial degree of the
+            right argument `y(t)`.  Terms in `y(t)` higher than `right_degree`
+            are ignored during the product. Defaults to
+            `DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER`
+        product_degree (int, optional): the polynomial degree of the resulting
+            polynomial product.  Terms higher than `product_degree` are
+            ignored. Defaults to DEFAULT_LIE_POLYNOMIAL_PRODUCT_ORDER.
 
     Returns:
         LiePolynomialProduct: the function computing the BCH product.
     """
     bracket = lie_bracket(algebra)
     zero = algebra.basis.zero
-    Z = baker_campbell_hausdorff_compile(bracket, max_order, "lifting")
+    Z = baker_campbell_hausdorff_compile(bracket, product_degree, "lifting")
 
-    # Build a static plan so there are no dict lookups inside jit
-    plan = BCHLiftingPlan.new(Z, max_order)
+    # Build a static plan so there are no dict lookups inside jit.  Generally
+    # building the plan is O(n 2^n) complexity if all of the degrees equal n
+    plan = BCHLiftingPlan.new(Z, left_degree, right_degree, product_degree)
 
     @jax.jit
     def product(x: LiePolynomial, y: LiePolynomial) -> LiePolynomial:
